@@ -1,0 +1,1512 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>משלוחי מכולת - השוואת מחירים</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        .rtl { direction: rtl; }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .app-container {
+            max-width: 400px;
+            margin: 0 auto;
+            min-height: 100vh;
+            background: white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .file-upload {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .file-upload:hover {
+            border-color: #007bff;
+            background: #f8f9fa;
+        }
+        .file-upload.dragover {
+            border-color: #007bff;
+            background: #e3f2fd;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // אייקונים פשוטים
+        const PlusIcon = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        );
+
+        const TrashIcon = () => (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3,6 5,6 21,6"></polyline>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+            </svg>
+        );
+
+        const UploadIcon = () => (
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7,10 12,15 17,10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+        );
+
+        const MapPinIcon = () => (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+        );
+
+        const ClockIcon = () => (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12,6 12,12 16,14"></polyline>
+            </svg>
+        );
+
+        const CheckIcon = () => (
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="20,6 9,17 4,12"></polyline>
+            </svg>
+        );
+
+        const PercentIcon = ({ size = 12 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="19" y1="5" x2="5" y2="19"></line>
+                <circle cx="6.5" cy="6.5" r="2.5"></circle>
+                <circle cx="17.5" cy="17.5" r="2.5"></circle>
+            </svg>
+        );
+
+        // קומפוננט טעינת קובץ
+        const FileUploader = ({ onFileLoaded }) => {
+            const [isDragOver, setIsDragOver] = useState(false);
+            const [error, setError] = useState(null);
+
+            const handleFileSelect = async (file) => {
+                if (!file) return;
+
+                try {
+                    setError(null);
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+
+                    // בדיקת תקינות
+                    if (!data.metadata || !data.products) {
+                        throw new Error('מבנה קובץ לא תקין - חסרים metadata או products');
+                    }
+
+                    const productCount = Object.keys(data.products).length;
+                    if (productCount === 0) {
+                        throw new Error('הקובץ ריק - אין מוצרים');
+                    }
+
+                    console.log(`✅ נטען קובץ עם ${productCount} מוצרים`);
+                    onFileLoaded(data);
+
+                } catch (error) {
+                    console.error('❌ שגיאה בטעינת קובץ:', error);
+                    setError(error.message);
+                }
+            };
+
+            const handleDrop = (e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith('.json')) {
+                    handleFileSelect(file);
+                }
+            };
+
+            return (
+                <div className="p-6">
+                    <div className="text-center mb-6">
+                        <h2 className="text-xl font-bold text-gray-800 mb-2">טעינת מאגר מוצרים</h2>
+                        <p className="text-gray-600">העלה את הקובץ products.json שיצרת</p>
+                    </div>
+
+                    <div
+                        className={`file-upload ${isDragOver ? 'dragover' : ''}`}
+                        onDrop={handleDrop}
+                        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onClick={() => document.getElementById('fileInput').click()}
+                    >
+                        <UploadIcon />
+                        <div className="mt-4">
+                            <p className="text-lg font-medium text-gray-700">
+                                {isDragOver ? 'שחרר כאן' : 'לחץ כאן או גרור קובץ'}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-2">
+                                קבצי JSON בלבד
+                            </p>
+                        </div>
+                    </div>
+
+                    <input
+                        id="fileInput"
+                        type="file"
+                        accept=".json"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFileSelect(e.target.files[0])}
+                    />
+
+                    {error && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <div className="text-red-800 font-medium">❌ שגיאה:</div>
+                            <div className="text-red-700 text-sm mt-1">{error}</div>
+                        </div>
+                    )}
+
+                    <div className="mt-6 text-sm text-gray-500">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div className="font-medium text-blue-800 mb-2">💡 עזרה:</div>
+                            <div className="text-blue-700">
+                                <div>• הקובץ צריך להיקרא products.json</div>
+                                <div>• הוא נוצר על ידי המעבד שהרצת קודם</div>
+                                <div>• אם אין לך את הקובץ, השתמש במעבד ליצור אותו</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // קומפוננט האפליקציה הראשי
+        const GroceryDeliveryApp = () => {
+            const [currentStep, setCurrentStep] = useState(0); // 0 = טעינת קובץ
+            const [shoppingList, setShoppingList] = useState([]);
+            const [newItem, setNewItem] = useState('');
+            const [selectedStore, setSelectedStore] = useState(null);
+            const [showSuggestions, setShowSuggestions] = useState(false);
+            const [productDatabase, setProductDatabase] = useState(null);
+            
+            // state לקטגוריות - מוגדר מחוץ ל-if
+            const [currentView, setCurrentView] = useState('search');
+            const [selectedCategory, setSelectedCategory] = useState(null);
+            const [selectedProduct, setSelectedProduct] = useState(null);
+            
+            // state חדש לתחליפים
+            const [selectedAlternatives, setSelectedAlternatives] = useState({}); // {productId: {preferred: bool, alternatives: [ids]}}
+            const [currentProductConfig, setCurrentProductConfig] = useState(null);
+
+            // כשקובץ נטען
+            const handleFileLoaded = (data) => {
+                console.log("קובץ נטען:", data);
+                setProductDatabase(data);
+                setCurrentStep(1);
+            };
+
+            // אם עדיין לא נטען קובץ
+            if (currentStep === 0 || !productDatabase) {
+                return (
+                    <div className="app-container">
+                        <div className="bg-blue-600 text-white p-4">
+                            <h1 className="text-xl font-bold text-center">משלוחי מכולת</h1>
+                            <p className="text-sm text-center mt-1 opacity-90">השוואת מחירים חכמה</p>
+                        </div>
+                        <FileUploader onFileLoaded={handleFileLoaded} />
+                    </div>
+                );
+            }
+
+            // בדיקה פשוטה שהנתונים נטענו - לדיבוג
+            if (currentStep === 1 && !productDatabase.products) {
+                return (
+                    <div className="app-container">
+                        <div className="bg-red-600 text-white p-4">
+                            <h1 className="text-xl font-bold text-center">שגיאה בטעינת נתונים</h1>
+                        </div>
+                        <div className="p-4 text-center">
+                            <p>הקובץ נטען אבל אין מוצרים</p>
+                            <button onClick={loadNewFile} className="mt-4 bg-blue-600 text-white px-4 py-2 rounded">
+                                נסה קובץ אחר
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // כל הפונקציות מהגרסה המקורית
+            const calculateFinalPrice = (product, storeId) => {
+                if (!product.prices[storeId]) return null;
+                
+                const basePrice = product.prices[storeId].price;
+                let bestDiscount = 0;
+                
+                if (product.promotions[storeId]) {
+                    const now = new Date();
+                    product.promotions[storeId].forEach(promo => {
+                        const startDate = new Date(promo.startDate);
+                        const endDate = new Date(promo.endDate);
+                        
+                        if (now >= startDate && now <= endDate) {
+                            bestDiscount = Math.max(bestDiscount, promo.discountRate);
+                        }
+                    });
+                }
+                
+                const finalPrice = basePrice * (1 - bestDiscount);
+                return {
+                    basePrice,
+                    finalPrice,
+                    discount: bestDiscount,
+                    savings: basePrice - finalPrice,
+                    hasPromotion: bestDiscount > 0
+                };
+            };
+
+            const findProductByName = (name) => {
+                let product = Object.values(productDatabase.products).find(product => 
+                    product.itemName === name
+                );
+                
+                if (product) return product;
+                
+                const searchTerm = name.toLowerCase().trim();
+                product = Object.values(productDatabase.products).find(product => 
+                    product.itemName.toLowerCase().includes(searchTerm) ||
+                    searchTerm.includes(product.itemName.toLowerCase())
+                );
+                
+                return product;
+            };
+
+            const findBestAlternative = (originalProduct, storeId) => {
+                if (originalProduct.prices[storeId]?.available) {
+                    return null;
+                }
+
+                const candidates = Object.values(productDatabase.products).filter(product => 
+                    product.itemCode !== originalProduct.itemCode &&
+                    product.prices[storeId]?.available &&
+                    product.category === originalProduct.category
+                );
+                
+                if (candidates.length === 0) return null;
+                
+                let bestMatch = null;
+                let bestScore = 0;
+                
+                candidates.forEach(candidate => {
+                    let score = 0;
+                    
+                    const originalWords = originalProduct.itemName.toLowerCase()
+                        .replace(/[^\u0590-\u05FF\w\s]/g, '')
+                        .split(/\s+/)
+                        .filter(word => word.length > 1);
+                    
+                    const candidateWords = candidate.itemName.toLowerCase()
+                        .replace(/[^\u0590-\u05FF\w\s]/g, '')
+                        .split(/\s+/)
+                        .filter(word => word.length > 1);
+                    
+                    const exactMatches = originalWords.filter(word => 
+                        candidateWords.includes(word)
+                    );
+                    score += exactMatches.length * 50;
+                    
+                    const similarMatches = originalWords.filter(word => 
+                        candidateWords.some(cWord => 
+                            cWord.includes(word) || word.includes(cWord)
+                        )
+                    );
+                    score += (similarMatches.length - exactMatches.length) * 25;
+                    
+                    if (originalProduct.manufacturer === candidate.manufacturer && 
+                        originalProduct.manufacturer.trim() !== '') {
+                        score += 80;
+                    }
+                    
+                    if (originalProduct.unitOfMeasure === candidate.unitOfMeasure) {
+                        score += 30;
+                    }
+                    
+                    if (originalProduct.isWeighted === candidate.isWeighted) {
+                        score += 20;
+                    }
+                    
+                    if (score > bestScore && score >= 40) {
+                        bestScore = score;
+                        bestMatch = {
+                            ...candidate,
+                            reason: 'תחליף מתאים',
+                            similarity: Math.min(score, 100)
+                        };
+                    }
+                });
+                
+                return bestMatch;
+            };
+
+            const getStoreAvailability = (storeId) => {
+                const missing = [];
+                const itemsWithPromotions = [];
+                let totalPrice = productDatabase.metadata.stores[storeId]?.deliveryPrice || 0;
+                let totalSavings = 0;
+                let totalRegularPrice = productDatabase.metadata.stores[storeId]?.deliveryPrice || 0;
+                
+                for (const item of shoppingList) {
+                    const product = findProductByName(item.name);
+                    
+                    if (!product) {
+                        missing.push({
+                            name: item.name,
+                            reason: 'מוצר לא נמצא במאגר',
+                            estimatedPrice: 10,
+                            alternative: null
+                        });
+                        totalPrice += 10;
+                        totalRegularPrice += 10;
+                        continue;
+                    }
+                    
+                    const priceData = calculateFinalPrice(product, storeId);
+                    
+                    if (!priceData || !product.prices[storeId]?.available) {
+                        const alternative = findBestAlternative(product, storeId);
+                        
+                        missing.push({
+                            name: item.name,
+                            reason: 'לא זמין בחנות',
+                            alternative: alternative,
+                            estimatedPrice: alternative ? 
+                                calculateFinalPrice(alternative, storeId)?.finalPrice || 15 : 15
+                        });
+                        
+                        const altPrice = alternative ? calculateFinalPrice(alternative, storeId)?.finalPrice || 15 : 15;
+                        totalPrice += altPrice;
+                        totalRegularPrice += altPrice;
+                    } else {
+                        totalPrice += priceData.finalPrice;
+                        totalRegularPrice += priceData.basePrice;
+                        totalSavings += priceData.savings;
+                        
+                        if (priceData.hasPromotion) {
+                            itemsWithPromotions.push({
+                                name: product.itemName,
+                                originalPrice: priceData.basePrice,
+                                discountedPrice: priceData.finalPrice,
+                                savings: priceData.savings
+                            });
+                        }
+                    }
+                }
+                
+                return { 
+                    missing, 
+                    totalPrice, 
+                    totalSavings,
+                    totalRegularPrice,
+                    itemsWithPromotions,
+                    availabilityRate: ((shoppingList.length - missing.length) / Math.max(shoppingList.length, 1)) * 100
+                };
+            };
+
+            const calculateAveragePrice = (product) => {
+                const prices = Object.values(product.prices)
+                    .filter(p => p.available)
+                    .map(p => p.price);
+                
+                if (prices.length === 0) return Infinity;
+                return prices.reduce((sum, price) => sum + price, 0) / prices.length;
+            };
+
+            const getProductSuggestions = () => {
+                if (!newItem || newItem.length < 2) return [];
+                
+                const searchTerm = newItem.toLowerCase();
+                const suggestions = [];
+                
+                Object.values(productDatabase.products).forEach(product => {
+                    const score = calculateSearchScore(product, searchTerm);
+                    if (score > 0) {
+                        suggestions.push({ ...product, score });
+                    }
+                });
+                
+                return suggestions
+                    .sort((a, b) => {
+                        if (b.score !== a.score) return b.score - a.score;
+                        const avgPriceA = calculateAveragePrice(a);
+                        const avgPriceB = calculateAveragePrice(b);
+                        return avgPriceA - avgPriceB;
+                    })
+                    .slice(0, 8);
+            };
+
+            const calculateSearchScore = (product, searchTerm) => {
+                const itemName = product.itemName.toLowerCase();
+                const manufacturer = product.manufacturer.toLowerCase();
+                
+                let score = 0;
+                
+                if (itemName === searchTerm) score += 100;
+                else if (itemName.startsWith(searchTerm)) score += 80;
+                else if (itemName.includes(searchTerm)) score += 60;
+                
+                if (manufacturer.includes(searchTerm)) score += 20;
+                
+                const storeCount = Object.keys(product.prices).length;
+                score += storeCount * 2;
+                
+                return score;
+            };
+
+            const addItem = (itemName = null) => {
+                const item = itemName || newItem.trim();
+                if (item) {
+                    setShoppingList([...shoppingList, { id: Date.now(), name: item }]);
+                    setNewItem('');
+                    setShowSuggestions(false);
+                }
+            };
+
+            const removeItem = (id) => {
+                setShoppingList(shoppingList.filter(item => item.id !== id));
+            };
+
+            const selectStore = (storeData, storeId) => {
+                setSelectedStore({ ...storeData, storeId });
+            };
+
+            const placeOrder = () => {
+                setCurrentStep(4);
+            };
+
+            const loadNewFile = () => {
+                setCurrentStep(0);
+                setProductDatabase(null);
+                setShoppingList([]);
+                setSelectedStore(null);
+                setCurrentView('search');
+                setSelectedCategory(null);
+                setSelectedProduct(null);
+            };
+
+            // שלב 1: ממשק קטגוריות + חיפוש רגיל
+            if (currentStep === 1) {
+                // קבלת קטגוריות מהנתונים - תיקון עם הגנה!
+                const getCategories = () => {
+                    try {
+                        console.log("מנסה לקבל קטגוריות...");
+                        
+                        // נסה לקבל מהמטאדטה
+                        const categoryStats = productDatabase?.metadata?.categorization?.statistics || {};
+                        console.log("קטגוריות מהמטאדטה:", categoryStats);
+                        
+                        // אם יש סטטיסטיקות קטגוריות
+                        if (Object.keys(categoryStats).length > 0) {
+                            const result = Object.entries(categoryStats)
+                                .filter(([category, count]) => count > 0 && category !== 'אחר')
+                                .sort(([,a], [,b]) => b - a)
+                                .map(([category, count]) => ({ name: category, count }));
+                            console.log("קטגוריות מהמטאדטה - תוצאה:", result);
+                            return result;
+                        }
+                        
+                        // אם אין סטטיסטיקות, צור אותן מהמוצרים
+                        console.log("יוצר קטגוריות מהמוצרים...");
+                        const categoryCount = {};
+                        const products = Object.values(productDatabase.products || {});
+                        console.log("מספר מוצרים:", products.length);
+                        
+                        products.forEach(product => {
+                            // תיקון: משתמש ב-smartCategory במקום category
+                            const category = product.smartCategory || product.category || 'אחר';
+                            categoryCount[category] = (categoryCount[category] || 0) + 1;
+                        });
+                        
+                        console.log("ספירת קטגוריות:", categoryCount);
+                        
+                        const result = Object.entries(categoryCount)
+                            .filter(([category, count]) => count > 0 && category !== 'אחר')
+                            .sort(([,a], [,b]) => b - a)
+                            .map(([category, count]) => ({ name: category, count }));
+                            
+                        console.log("קטגוריות - תוצאה סופית:", result);
+                        return result;
+                            
+                    } catch (error) {
+                        console.error('שגיאה בקבלת קטגוריות:', error);
+                        return [];
+                    }
+                };
+
+                // קבלת מוצרים לפי קטגוריה - תיקון עם הגנה!
+                const getProductsByCategory = (categoryName) => {
+                    try {
+                        const products = Object.values(productDatabase.products)
+                            .filter(product => {
+                                // תיקון: משתמש ב-smartCategory במקום category
+                                const productCategory = product.smartCategory || product.category;
+                                return productCategory === categoryName;
+                            })
+                            .sort((a, b) => calculateAveragePrice(a) - calculateAveragePrice(b));
+                        
+                        console.log(`מוצרים בקטגוריה ${categoryName}:`, products.length);
+                        return products;
+                    } catch (error) {
+                        console.error('שגיאה בקבלת מוצרים לפי קטגוריה:', error);
+                        return [];
+                    }
+                };
+
+                // קבלת תחליפים למוצר - עדכון לקריאה מהמעבד החכם!
+                const getProductAlternatives = (baseProduct) => {
+                    try {
+                        // 🤖 בדיקה אם יש תחליפים חכמים מהמעבד
+                        if (baseProduct.smartAlternatives && baseProduct.smartAlternatives.length > 0) {
+                            console.log(`🎯 משתמש בתחליפים חכמים מהמעבד למוצר ${baseProduct.itemName}: ${baseProduct.smartAlternatives.length} תחליפים`);
+                            
+                            // המרה של התחליפים החכמים למבנה שהאפליקציה מבינה
+                            const smartAlternatives = baseProduct.smartAlternatives.map(smartAlt => {
+                                // חיפוש המוצר המלא על בסיס itemCode
+                                const fullProduct = Object.values(productDatabase.products).find(p => 
+                                    p.itemCode === smartAlt.itemCode
+                                );
+                                
+                                if (fullProduct) {
+                                    return {
+                                        ...fullProduct,
+                                        // הוספת מידע מהמעבד החכם
+                                        smartScore: smartAlt.qualityScore,
+                                        smartReason: smartAlt.matchReason,
+                                        smartConfidence: smartAlt.confidence,
+                                        priceComparison: smartAlt.priceComparison,
+                                        isSmartAlternative: true
+                                    };
+                                }
+                                return null;
+                            }).filter(alt => alt !== null);
+                            
+                            console.log(`✅ נמצאו ${smartAlternatives.length} תחליפים חכמים תקינים`);
+                            return smartAlternatives;
+                        }
+                        
+                        // 📂 אם אין תחליפים חכמים, חזור למערכת הישנה (על בסיס קטגוריה)
+                        console.log(`⚠️ לא נמצאו תחליפים חכמים למוצר ${baseProduct.itemName}, משתמש במערכת הבסיסית`);
+                        
+                        const baseCategory = baseProduct.smartCategory || baseProduct.category;
+                        const alternatives = Object.values(productDatabase.products)
+                            .filter(product => {
+                                const productCategory = product.smartCategory || product.category;
+                                return productCategory === baseCategory && 
+                                       product.itemCode !== baseProduct.itemCode;
+                            })
+                            .sort((a, b) => calculateAveragePrice(a) - calculateAveragePrice(b))
+                            .slice(0, 5)
+                            .map(alt => ({
+                                ...alt,
+                                isSmartAlternative: false // סימון שזה תחליף בסיסי
+                            }));
+                        
+                        console.log(`📋 נמצאו ${alternatives.length} תחליפים בסיסיים למוצר ${baseProduct.itemName}`);
+                        return alternatives;
+                        
+                    } catch (error) {
+                        console.error('שגיאה בקבלת תחליפים:', error);
+                        return [];
+                    }
+                };
+
+                const filteredSuggestions = getProductSuggestions();
+                
+                return (
+                    <div className="app-container">
+                        <div className="bg-blue-600 text-white p-4">
+                            <div className="flex justify-between items-center">
+                                <button 
+                                    onClick={loadNewFile}
+                                    className="text-xs bg-blue-500 hover:bg-blue-400 px-2 py-1 rounded"
+                                >
+                                    קובץ אחר
+                                </button>
+                                <div className="text-center">
+                                    <h1 className="text-xl font-bold">משלוחי מכולת</h1>
+                                    <p className="text-sm opacity-90">
+                                        {Object.keys(productDatabase.products).length.toLocaleString()} מוצרים
+                                    </p>
+                                </div>
+                                <div></div>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4">
+                            {/* כפתורי מעבר בין חיפוש וקטגוריות */}
+                            <div className="flex gap-2 mb-4">
+                                <button
+                                    onClick={() => setCurrentView('search')}
+                                    className={`flex-1 py-2 px-4 rounded-lg font-semibold ${
+                                        currentView === 'search' || currentView === 'categories' 
+                                            ? 'bg-blue-600 text-white' 
+                                            : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                >
+                                    {currentView === 'search' ? '🔍 חיפוש' : '📝 חיפוש'}
+                                </button>
+                                <button
+                                    onClick={() => setCurrentView('categories')}
+                                    className={`flex-1 py-2 px-4 rounded-lg font-semibold ${
+                                        currentView.startsWith('categories') || currentView === 'products' || currentView === 'alternatives'
+                                            ? 'bg-green-600 text-white' 
+                                            : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                >
+                                    {currentView !== 'search' ? '📂 קטגוריות' : '📁 קטגוריות'}
+                                </button>
+                            </div>
+
+                            {/* מסך חיפוש */}
+                            {currentView === 'search' && (
+                                <div>
+                                    <h2 className="text-lg font-semibold mb-4 text-right">הרכב את רשימת הקניות</h2>
+                                    
+                                    <div className="relative">
+                                        <div className="flex gap-2 mb-2">
+                                            <input
+                                                type="text"
+                                                value={newItem}
+                                                onChange={(e) => {
+                                                    setNewItem(e.target.value);
+                                                    setShowSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowSuggestions(true)}
+                                                placeholder="הוסף מוצר..."
+                                                className="flex-1 p-2 border border-gray-300 rounded-lg text-right"
+                                                onKeyPress={(e) => e.key === 'Enter' && addItem()}
+                                            />
+                                            <button
+                                                onClick={() => addItem()}
+                                                className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700"
+                                            >
+                                                <PlusIcon />
+                                            </button>
+                                        </div>
+                                        
+                                        {showSuggestions && filteredSuggestions.length > 0 && newItem.length > 1 && (
+                                            <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                                {filteredSuggestions.map((product, index) => (
+                                                    <div
+                                                        key={index}
+                                                        className="p-2 hover:bg-gray-100 cursor-pointer text-right border-b border-gray-100"
+                                                        style={{ borderBottom: index === filteredSuggestions.length - 1 ? 'none' : '1px solid #f3f4f6' }}
+                                                        onClick={() => addItem(product.itemName)}
+                                                    >
+                                                        <div className="font-medium">{product.itemName}</div>
+                                                        <div className="text-xs text-gray-500 flex justify-between">
+                                                            <span>₪{calculateAveragePrice(product).toFixed(2)} ממוצע</span>
+                                                            <span>{product.manufacturer} • {product.category}</span>
+                                                        </div>
+                                                        <div className="text-xs text-blue-600">
+                                                            זמין ב-{Object.keys(product.prices).length} חנויות
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* נתיב ניווט לקטגוריות */}
+                            {currentView !== 'search' && (
+                                <div className="flex items-center text-sm text-gray-600 mb-4">
+                                    <button 
+                                        onClick={() => setCurrentView('categories')}
+                                        className="text-blue-600 hover:underline"
+                                    >
+                                        קטגוריות
+                                    </button>
+                                    {selectedCategory && (
+                                        <>
+                                            <span className="mx-2">←</span>
+                                            <button 
+                                                onClick={() => setCurrentView('products')}
+                                                className="text-blue-600 hover:underline"
+                                            >
+                                                {selectedCategory}
+                                            </button>
+                                        </>
+                                    )}
+                                    {selectedProduct && (
+                                        <>
+                                            <span className="mx-2">←</span>
+                                            <span className="text-gray-800">{selectedProduct.itemName}</span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* מסך קטגוריות */}
+                            {currentView === 'categories' && (
+                                <div>
+                                    <h2 className="text-lg font-semibold mb-4 text-right">בחר קטגוריה</h2>
+                                    <div className="space-y-3">
+                                        {getCategories().map((category) => (
+                                            <div
+                                                key={category.name}
+                                                className="bg-white border border-gray-200 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow"
+                                                onClick={() => {
+                                                    setSelectedCategory(category.name);
+                                                    setCurrentView('products');
+                                                }}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <div className="text-gray-500 text-sm">
+                                                        {category.count.toLocaleString()} מוצרים
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <h3 className="font-semibold text-gray-800">{category.name}</h3>
+                                                        <div className="text-xs text-gray-500 mt-1">→ לחץ לפתיחה</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* מסך מוצרים בקטגוריה */}
+                            {currentView === 'products' && selectedCategory && (
+                                <div>
+                                    <h2 className="text-lg font-semibold mb-4 text-right">{selectedCategory}</h2>
+                                    <div className="space-y-2">
+                                        {getProductsByCategory(selectedCategory).map((product) => (
+                                            <div
+                                                key={product.itemCode}
+                                                className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                                                onClick={() => {
+                                                    setSelectedProduct(product);
+                                                    setCurrentView('alternatives');
+                                                }}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <div className="text-left">
+                                                        <div className="font-bold text-blue-600">
+                                                            ₪{calculateAveragePrice(product).toFixed(2)}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            ממוצע ב-{Object.keys(product.prices).length} חנויות
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right flex-1 mr-3">
+                                                        <div className="font-medium text-gray-800">
+                                                            {product.itemName}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            {product.manufacturer}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* מסך תחליפים */}
+                            {currentView === 'alternatives' && selectedProduct && (
+                                <div>
+                                    <h2 className="text-lg font-semibold mb-2 text-right">בחר תחליפים</h2>
+                                    <p className="text-sm text-gray-600 mb-4 text-right">
+                                        כוכב = מועדף ביותר • ✓ = תחליף מקובל
+                                    </p>
+
+                                    {/* המוצר הראשי */}
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                        <div className="flex justify-between items-center">
+                                            <div className="text-left">
+                                                <div className="font-bold text-blue-600">
+                                                    ₪{calculateAveragePrice(selectedProduct).toFixed(2)}
+                                                </div>
+                                                <div className="text-yellow-500 text-xl">⭐</div>
+                                            </div>
+                                            <div className="text-right flex-1 mr-3">
+                                                <div className="font-semibold text-blue-800">
+                                                    {selectedProduct.itemName}
+                                                </div>
+                                                <div className="text-xs text-blue-600">
+                                                    {selectedProduct.manufacturer} • בחירה ראשית
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* תחליפים */}
+                                    <div className="space-y-2 mb-4">
+                                        {getProductAlternatives(selectedProduct).map((alternative) => {
+                                            const currentConfig = currentProductConfig || {};
+                                            const isStarred = currentConfig.preferred === alternative.itemCode;
+                                            const isChecked = currentConfig.alternatives?.includes(alternative.itemCode) || false;
+                                            
+                                            return (
+                                                <div
+                                                    key={alternative.itemCode}
+                                                    className="bg-white border border-gray-200 rounded-lg p-3"
+                                                >
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="text-left flex items-center gap-2">
+                                                            <div>
+                                                                <div className="font-bold text-gray-800">
+                                                                    ₪{calculateAveragePrice(alternative).toFixed(2)}
+                                                                </div>
+                                                                <div className="text-xs text-gray-500">
+                                                                    {Object.keys(alternative.prices).length} חנויות
+                                                                </div>
+                                                                {/* הצגת מידע חכם מהמעבד */}
+                                                                {alternative.isSmartAlternative && alternative.smartScore && (
+                                                                    <div className="text-xs text-blue-600 mt-1">
+                                                                        🤖 {alternative.smartScore}% איכות
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right flex-1 mr-3">
+                                                            <div className="font-medium text-gray-800">
+                                                                {alternative.itemName}
+                                                                {alternative.isSmartAlternative && (
+                                                                    <span className="text-blue-500 text-xs mr-1">🎯</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {alternative.manufacturer}
+                                                            </div>
+                                                            {/* הצגת הסבר חכם מהמעבד */}
+                                                            {alternative.isSmartAlternative && alternative.smartReason && (
+                                                                <div className="text-xs text-blue-600 mt-1">
+                                                                    💡 {alternative.smartReason}
+                                                                </div>
+                                                            )}
+                                                            {/* סימון ביטחון */}
+                                                            {alternative.isSmartAlternative && alternative.smartConfidence && (
+                                                                <div className="text-xs mt-1">
+                                                                    {alternative.smartConfidence === 'high' && <span className="text-green-600">🔥 ביטחון גבוה</span>}
+                                                                    {alternative.smartConfidence === 'medium' && <span className="text-yellow-600">⚡ ביטחון בינוני</span>}
+                                                                    {alternative.smartConfidence === 'low' && <span className="text-orange-600">⚠️ ביטחון נמוך</span>}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            {/* כפתור כוכב - מועדף */}
+                                                            <button 
+                                                                onClick={() => {
+                                                                    const newConfig = {
+                                                                        ...currentConfig,
+                                                                        preferred: isStarred ? null : alternative.itemCode
+                                                                    };
+                                                                    setCurrentProductConfig(newConfig);
+                                                                }}
+                                                                className={`text-lg ${isStarred ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'}`}
+                                                            >
+                                                                {isStarred ? '⭐' : '☆'}
+                                                            </button>
+                                                            
+                                                            {/* כפתור V - תחליף */}
+                                                            <button 
+                                                                onClick={() => {
+                                                                    const alternatives = currentConfig.alternatives || [];
+                                                                    const newAlternatives = isChecked 
+                                                                        ? alternatives.filter(id => id !== alternative.itemCode)
+                                                                        : [...alternatives, alternative.itemCode];
+                                                                    
+                                                                    setCurrentProductConfig({
+                                                                        ...currentConfig,
+                                                                        alternatives: newAlternatives
+                                                                    });
+                                                                }}
+                                                                className={`text-lg ${isChecked ? 'text-green-500' : 'text-gray-400 hover:text-green-500'}`}
+                                                            >
+                                                                {isChecked ? '✅' : '☐'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* כפתורי פעולה */}
+                                    <div className="space-y-3">
+                                        <button
+                                            onClick={() => {
+                                                // שמירת הגדרות התחליפים
+                                                if (currentProductConfig) {
+                                                    setSelectedAlternatives({
+                                                        ...selectedAlternatives,
+                                                        [selectedProduct.itemCode]: currentProductConfig
+                                                    });
+                                                }
+                                                
+                                                // הוספה לרשימה
+                                                addItem(selectedProduct.itemName);
+                                                
+                                                // איפוס
+                                                setCurrentView('categories');
+                                                setSelectedProduct(null);
+                                                setSelectedCategory(null);
+                                                setCurrentProductConfig(null);
+                                            }}
+                                            className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700"
+                                        >
+                                            ✅ הוסף לרשימת קניות
+                                        </button>
+                                        
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => {
+                                                    // בחר הכל כתחליפים
+                                                    const allAlternatives = getProductAlternatives(selectedProduct).map(alt => alt.itemCode);
+                                                    setCurrentProductConfig({
+                                                        ...currentProductConfig,
+                                                        alternatives: allAlternatives
+                                                    });
+                                                }}
+                                                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
+                                            >
+                                                ☑️ בחר הכל
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    // בטל הכל
+                                                    setCurrentProductConfig({
+                                                        preferred: null,
+                                                        alternatives: []
+                                                    });
+                                                }}
+                                                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
+                                            >
+                                                ☐ בטל הכל
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* רשימת הקניות הנוכחית */}
+                            <div className="space-y-2 mb-6 mt-4">
+                                {shoppingList.map(item => (
+                                    <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                        <button
+                                            onClick={() => removeItem(item.id)}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                        <span className="text-right">{item.name}</span>
+                                    </div>
+                                ))}
+                                
+                                {shoppingList.length === 0 && currentView === 'search' && (
+                                    <div className="text-center py-8 text-gray-500">
+                                        <p className="mb-4">עדיין לא הוספת מוצרים לרשימה</p>
+                                        <div className="text-sm text-gray-400">
+                                            <p>מוצרים פופולריים:</p>
+                                            <div className="flex flex-wrap gap-2 mt-2 justify-center">
+                                                {Object.values(productDatabase.products).slice(0, 5).map((product, index) => (
+                                                    <button
+                                                        key={index}
+                                                        onClick={() => addItem(product.itemName)}
+                                                        className="px-3 py-1 bg-blue-100 text-blue-600 rounded-full text-xs hover:bg-blue-200"
+                                                    >
+                                                        {product.itemName}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {shoppingList.length > 0 && (
+                                <button
+                                    onClick={() => setCurrentStep(2)}
+                                    className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700"
+                                >
+                                    המשך לבחירת סופר ({shoppingList.length} מוצרים)
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
+            // שלב 2: בחירת חנות (מהגרסה המקורית)
+            if (currentStep === 2) {
+                const storesWithPrices = Object.entries(productDatabase.metadata.stores).map(([storeId, store]) => {
+                    const availability = getStoreAvailability(storeId);
+                    return {
+                        storeId,
+                        ...store,
+                        ...availability
+                    };
+                }).sort((a, b) => a.totalPrice - b.totalPrice);
+                
+                const cheapestPrice = storesWithPrices[0]?.totalPrice;
+
+                return (
+                    <div className="app-container">
+                        <div className="bg-blue-600 text-white p-4">
+                            <div className="flex justify-between items-center">
+                                <button 
+                                    onClick={() => setCurrentStep(1)}
+                                    className="text-white text-xl"
+                                >
+                                    ←
+                                </button>
+                                <div className="text-center">
+                                    <h1 className="text-xl font-bold">בחר סופר</h1>
+                                    <p className="text-sm opacity-90">{shoppingList.length} מוצרים</p>
+                                </div>
+                                <div></div>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4">
+                            <div className="space-y-3">
+                                {storesWithPrices.map((store) => {
+                                    const isLowest = store.totalPrice === cheapestPrice;
+                                    
+                                    return (
+                                        <div 
+                                            key={store.storeId} 
+                                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                                selectedStore?.storeId === store.storeId 
+                                                    ? 'border-blue-500 bg-blue-50' 
+                                                    : isLowest 
+                                                        ? 'border-green-400 bg-green-50'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                            }`}
+                                            onClick={() => {
+                                                setSelectedStore({...store, storeAvailability: store});
+                                                setCurrentStep(3);
+                                            }}
+                                        >
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-yellow-500">★</span>
+                                                    <span className="text-sm text-gray-600">{store.rating}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <h3 className="font-semibold">{store.displayName}</h3>
+                                                    <p className="text-xs text-blue-600">{store.specialty}</p>
+                                                    {isLowest && (
+                                                        <p className="text-xs text-green-600 font-medium">הכי זול!</p>
+                                                    )}
+                                                    {store.totalSavings > 0 && (
+                                                        <div className="flex items-center gap-1 text-xs text-green-600">
+                                                            <PercentIcon />
+                                                            <span>חוסך ₪{store.totalSavings.toFixed(2)}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-1 text-sm text-gray-600">
+                                                <div className="flex justify-between">
+                                                    <div className="flex items-center gap-1">
+                                                        <MapPinIcon />
+                                                        <span>{store.distance}</span>
+                                                    </div>
+                                                    <span className="text-right">מרחק</span>
+                                                </div>
+                                                
+                                                <div className="flex justify-between">
+                                                    <div className="flex items-center gap-1">
+                                                        <ClockIcon />
+                                                        <span>{store.deliveryTime}</span>
+                                                    </div>
+                                                    <span className="text-right">זמן אספקה</span>
+                                                </div>
+                                                
+                                                <div className="flex justify-between">
+                                                    <span>₪{store.deliveryPrice}</span>
+                                                    <span className="text-right">עלות משלוח</span>
+                                                </div>
+
+                                                <div className="flex justify-between">
+                                                    <span className={store.missing.length === 0 ? 'text-green-600' : 'text-orange-600'}>
+                                                        {store.missing.length === 0 ? '✅ 100% זמין' : `⚠ ${store.missing.length} חסרים`}
+                                                    </span>
+                                                    <span className="text-right">זמינות</span>
+                                                </div>
+
+                                                {store.itemsWithPromotions && store.itemsWithPromotions.length > 0 && (
+                                                    <div className="flex justify-between">
+                                                        <span className="text-green-600">
+                                                            🎯 {store.itemsWithPromotions.length} במבצע
+                                                        </span>
+                                                        <span className="text-right">מבצעים</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            <div className="flex justify-between border-t pt-2 mt-2">
+                                                <div className={`text-lg font-bold ${
+                                                    isLowest ? 'text-green-600' : 'text-blue-600'
+                                                }`}>
+                                                    ₪{store.totalPrice.toFixed(2)}
+                                                    {isLowest && <span className="text-sm mr-1">🏆</span>}
+                                                </div>
+                                                <span className="text-right font-medium">סה"כ לתשלום</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // שלב 3: סיכום הזמנה המפורט
+            if (currentStep === 3 && selectedStore) {
+                const storeAvailability = selectedStore.storeAvailability;
+                
+                const itemsWithPrices = shoppingList.map(item => {
+                    const product = findProductByName(item.name);
+                    if (!product) {
+                        return {
+                            id: item.id,
+                            name: item.name,
+                            available: false,
+                            originalPrice: 10,
+                            finalPrice: 10,
+                            hasPromotion: false
+                        };
+                    }
+
+                    const priceData = calculateFinalPrice(product, selectedStore.storeId);
+                    if (!priceData || !product.prices[selectedStore.storeId]?.available) {
+                        const alternative = findBestAlternative(product, selectedStore.storeId);
+                        const altPrice = alternative ? calculateFinalPrice(alternative, selectedStore.storeId)?.finalPrice || 15 : 15;
+                        
+                        return {
+                            id: item.id,
+                            name: item.name,
+                            available: false,
+                            alternative: alternative?.itemName,
+                            originalPrice: altPrice,
+                            finalPrice: altPrice,
+                            hasPromotion: false
+                        };
+                    }
+
+                    return {
+                        id: item.id,
+                        name: item.name,
+                        available: true,
+                        originalPrice: priceData.basePrice,
+                        finalPrice: priceData.finalPrice,
+                        hasPromotion: priceData.hasPromotion,
+                        savings: priceData.savings
+                    };
+                });
+
+                const calculateTotals = () => {
+                    let subtotal = 0;
+                    let totalSavings = 0;
+                    let itemsCount = 0;
+
+                    itemsWithPrices.forEach(item => {
+                        subtotal += item.finalPrice;
+                        if (item.hasPromotion) {
+                            totalSavings += item.savings;
+                        }
+                        itemsCount++;
+                    });
+
+                    const deliveryFee = selectedStore.deliveryPrice;
+                    const total = subtotal + deliveryFee;
+
+                    return {
+                        subtotal,
+                        totalSavings,
+                        deliveryFee,
+                        total,
+                        itemsCount
+                    };
+                };
+
+                const totals = calculateTotals();
+
+                return (
+                    <div className="app-container">
+                        <div className="bg-blue-600 text-white p-4">
+                            <div className="flex items-center justify-between">
+                                <button 
+                                    onClick={() => setCurrentStep(2)}
+                                    className="text-white text-xl"
+                                >
+                                    ←
+                                </button>
+                                <div className="text-center">
+                                    <h1 className="text-lg font-bold">סיכום הזמנה</h1>
+                                    <p className="text-sm opacity-90">{selectedStore.displayName}</p>
+                                </div>
+                                <div></div>
+                            </div>
+                        </div>
+
+                        <div className="p-4">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-right">
+                                        <h3 className="font-semibold text-blue-800">{selectedStore.displayName}</h3>
+                                        <div className="text-sm text-blue-600">
+                                            ⭐ {selectedStore.rating} • ⏰ {selectedStore.deliveryTime}
+                                        </div>
+                                    </div>
+                                    <div className="text-blue-600 text-2xl">🏪</div>
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold mb-3 text-right">המוצרים שלך ({totals.itemsCount} פריטים)</h3>
+                                
+                                <div className="space-y-3">
+                                    {itemsWithPrices.map(item => (
+                                        <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                                            <div className="flex justify-between items-start">
+                                                <div className="text-left">
+                                                    {item.hasPromotion ? (
+                                                        <div>
+                                                            <div className="text-gray-500 line-through text-sm">
+                                                                ₪{item.originalPrice.toFixed(2)}
+                                                            </div>
+                                                            <div className="text-green-600 font-bold">
+                                                                ₪{item.finalPrice.toFixed(2)}
+                                                            </div>
+                                                            <div className="text-xs text-green-600">
+                                                                🎉 חוסך ₪{item.savings.toFixed(2)}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="font-bold text-gray-800">
+                                                            ₪{item.finalPrice.toFixed(2)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                <div className="text-right flex-1 mr-3">
+                                                    <div className="font-medium text-gray-800">
+                                                        {item.name}
+                                                    </div>
+                                                    {!item.available && item.alternative && (
+                                                        <div className="text-xs text-orange-600 mt-1">
+                                                            תחליף: {item.alternative}
+                                                        </div>
+                                                    )}
+                                                    {item.hasPromotion && (
+                                                        <div className="text-xs text-green-600 mt-1">
+                                                            במבצע! 🔥
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className={`text-lg ${item.available ? 'text-green-600' : 'text-orange-600'}`}>
+                                                    {item.available ? '✅' : '⚠️'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                                <h3 className="font-semibold mb-3 text-right">פירוט תשלום</h3>
+                                
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="font-medium">₪{totals.subtotal.toFixed(2)}</span>
+                                        <span className="text-right">סה"כ מוצרים</span>
+                                    </div>
+                                    
+                                    {totals.totalSavings > 0 && (
+                                        <div className="flex justify-between text-green-600">
+                                            <span className="font-medium">-₪{totals.totalSavings.toFixed(2)}</span>
+                                            <span className="text-right">חיסכון ממבצעים</span>
+                                        </div>
+                                    )}
+                                    
+                                    <div className="flex justify-between">
+                                        <span className="font-medium">₪{totals.deliveryFee.toFixed(2)}</span>
+                                        <span className="text-right">עלות משלוח</span>
+                                    </div>
+                                    
+                                    <div className="border-t pt-2 mt-2">
+                                        <div className="flex justify-between text-lg font-bold">
+                                            <span className="text-blue-600">₪{totals.total.toFixed(2)}</span>
+                                            <span className="text-right">סה"כ לתשלום</span>
+                                        </div>
+                                    </div>
+
+                                    {totals.totalSavings > 0 && (
+                                        <div className="text-center text-sm text-green-600 mt-2">
+                                            🎉 חסכת ₪{totals.totalSavings.toFixed(2)} מהמחיר הרגיל!
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                                <div className="text-sm text-yellow-800">
+                                    <div className="flex justify-between mb-1">
+                                        <span>{selectedStore.deliveryTime}</span>
+                                        <span className="text-right">⏰ זמן הגעה משוער</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>03-1234567</span>
+                                        <span className="text-right">📞 ליצירת קשר</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <button
+                                    onClick={() => setCurrentStep(4)}
+                                    className="w-full bg-green-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-green-700"
+                                >
+                                    🚀 אשר ושלח הזמנה
+                                </button>
+                                
+                                <button
+                                    onClick={() => setCurrentStep(2)}
+                                    className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600"
+                                >
+                                    ← חזור לבחירת חנות
+                                </button>
+
+                                <button
+                                    onClick={() => setCurrentStep(1)}
+                                    className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50"
+                                >
+                                    ✏️ ערוך רשימת קניות
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // שלב 4: הזמנה נשלחה
+            if (currentStep === 4) {
+                const finalAvailability = getStoreAvailability(selectedStore.storeId);
+                
+                return (
+                    <div className="app-container">
+                        <div className="bg-green-600 text-white p-4">
+                            <h1 className="text-xl font-bold text-center">הזמנה נשלחה</h1>
+                        </div>
+                        
+                        <div className="p-4 text-center">
+                            <div className="mb-6">
+                                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CheckIcon />
+                                </div>
+                                <h2 className="text-xl font-semibold mb-2">הזמנה נשלחה בהצלחה!</h2>
+                                <p className="text-gray-600 mb-4">
+                                    הזמנתך נשלחה ל{selectedStore.displayName}
+                                </p>
+                            </div>
+
+                            <div className="bg-gray-50 p-4 rounded-lg mb-6 text-right">
+                                <h3 className="font-semibold mb-2">פרטי ההזמנה:</h3>
+                                <p className="text-sm text-gray-600 mb-1">סופר: {selectedStore.displayName}</p>
+                                <p className="text-sm text-gray-600 mb-1">זמן אספקה: {selectedStore.deliveryTime}</p>
+                                <div className="text-sm text-gray-600 mb-2">
+                                    <div>מחיר מוצרים: ₪{(finalAvailability.totalPrice - selectedStore.deliveryPrice).toFixed(2)}</div>
+                                    <div>עלות משלוח: ₪{selectedStore.deliveryPrice}</div>
+                                    {finalAvailability.totalSavings > 0 && (
+                                        <div className="text-green-600 font-medium">
+                                            חיסכון מבצעים: ₪{finalAvailability.totalSavings.toFixed(2)}
+                                        </div>
+                                    )}
+                                    <div className="font-bold text-lg text-green-600 mt-1">
+                                        סה"כ לתשלום: ₪{finalAvailability.totalPrice.toFixed(2)}
+                                    </div>
+                                </div>
+                                <p className="text-sm text-gray-600">מספר פריטים: {shoppingList.length}</p>
+                            </div>
+
+                            <div className="space-y-3">
+                                <button
+                                    onClick={() => {
+                                        setCurrentStep(1);
+                                        setShoppingList([]);
+                                        setSelectedStore(null);
+                                        setNewItem('');
+                                        setShowSuggestions(false);
+                                    }}
+                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700"
+                                >
+                                    הזמנה חדשה
+                                </button>
+                                
+                                <button
+                                    onClick={loadNewFile}
+                                    className="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600"
+                                >
+                                    טען קובץ מוצרים אחר
+                                </button>
+                                
+                                <button
+                                    onClick={() => {
+                                        const htmlContent = document.documentElement.outerHTML;
+                                        const htmlBlob = new Blob([htmlContent], {type: 'text/html'});
+                                        const link = document.createElement('a');
+                                        link.href = URL.createObjectURL(htmlBlob);
+                                        link.download = 'grocery_app_with_smart_alternatives.html';
+                                        link.click();
+                                    }}
+                                    className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
+                                >
+                                    🌐 הורד האפליקציה כ-HTML
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+        };
+
+        // הרצת האפליקציה
+        ReactDOM.render(<GroceryDeliveryApp />, document.getElementById('app'));
+    </script>
+</body>
+</html>
+                
