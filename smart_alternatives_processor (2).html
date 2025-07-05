@@ -141,6 +141,20 @@
     </div>
 
     <script>
+        alert("הקוד נטען!");
+    
+    // בדיקת כפתורים
+    document.addEventListener('DOMContentLoaded', function() {
+        alert("הדף נטען!");
+        
+        const productsInput = document.getElementById('productsFile');
+        const tinderInput = document.getElementById('tinderFile');
+        
+        alert("כפתור מוצרים: " + (productsInput ? "קיים" : "לא קיים"));
+        alert("כפתור טינדר: " + (tinderInput ? "קיים" : "לא קיים"));
+    });
+    
+    let productsData = null;
         let productsData = null;
         let tinderReport = null;
         let learnedRules = null;
