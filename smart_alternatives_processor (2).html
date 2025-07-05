@@ -284,58 +284,73 @@
         }
 
         function analyzeLearningPatterns() {
-            const patterns = tinderReport.patterns;
-            const metadata = tinderReport.metadata;
-            const trainingData = tinderReport.trainingData;
+    const patterns = tinderReport.patterns;
+    const metadata = tinderReport.metadata;
+    const trainingData = tinderReport.trainingData;
+    
+    // ניתוח מתקדם של המקרים הספציפיים
+    const goodCases = trainingData.filter(d => d.decision === 'good');
+    const badCases = trainingData.filter(d => d.decision === 'bad');
+    
+    // חישוב סטטיסטיקות מתקדמות מהלוג האמיתי
+    const avgGoodSharedWords = goodCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / goodCases.length;
+    const avgBadSharedWords = badCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / badCases.length;
+    
+    const avgGoodPriceRatio = goodCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / goodCases.length;
+    const avgBadPriceRatio = badCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / badCases.length;
+    
+    // חישוב כוח ההפרדה של כל פקטור (כמה טוב הוא מבדיל בין טוב לרע)
+    const sharedWordsSeparation = Math.abs(avgGoodSharedWords - avgBadSharedWords);
+    const priceSeparation = Math.abs(avgGoodPriceRatio - avgBadPriceRatio);
+    const brandAccuracy = patterns.sameBrand.accuracy;
+    const unitAccuracy = patterns.sameUnitOfMeasure.accuracy;
+    
+    // יצירת חוקי למידה מבוססי הנתונים האמיתיים שלך
+    learnedRules = {
+        category: metadata.category,
+        totalTrainingDecisions: metadata.totalDecisions,
+        accuracy: (metadata.goodDecisions / metadata.totalDecisions * 100).toFixed(1),
+        
+        // משקלים מבוססי כוח ההפרדה מהנתונים שלך
+        weights: {
+            // מילים משותפות - הפקטור החזק ביותר שלך (הפרדה של 1.6)
+            sharedWords: Math.min(60, sharedWordsSeparation * 40), // עד 60%
             
-            // ניתוח מתקדם של המקרים הספציפיים
-            const goodCases = trainingData.filter(d => d.decision === 'good');
-            const badCases = trainingData.filter(d => d.decision === 'bad');
+            // מחיר - גם חשוב אצלך (הפרדה של 0.1)
+            priceRatio: Math.min(25, priceSeparation * 250), // עד 25%
             
-            // חישוב סטטיסטיקות מתקדמות
-            const avgGoodSharedWords = goodCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / goodCases.length;
-            const avgBadSharedWords = badCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / badCases.length;
+            // מותג - לא מועיל אצלך (50% דיוק)
+            sameBrand: brandAccuracy > 0.7 ? 15 : 5, // רק 5% אם לא מועיל
             
-            const avgGoodPriceRatio = goodCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / goodCases.length;
-            const avgBadPriceRatio = badCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / badCases.length;
-            
-            // יצירת חוקי למידה מתקדמים מהדוח האמיתי שלך
-            learnedRules = {
-                category: metadata.category,
-                totalTrainingDecisions: metadata.totalDecisions,
-                accuracy: (metadata.goodDecisions / metadata.totalDecisions * 100).toFixed(1),
-                
-                // משקלים מבוססים על הנתונים האמיתיים
-                weights: {
-                    sameBrand: patterns.sameBrand.accuracy * 80, // 60%
-                    sameUnit: patterns.sameUnitOfMeasure.accuracy * 70, // 53%
-                    sharedWords: Math.max(10, (avgGoodSharedWords - avgBadSharedWords) * 25), // 45
-                    priceRatio: 35, // חשוב מאוד למחיר
-                    pricePreference: avgGoodPriceRatio < 1.0 ? 10 : 0 // בונוס למוצרים זולים יותר
-                },
-                
-                // ספים מבוססים על הנתונים
-                minSharedWords: Math.max(1, Math.round(avgGoodSharedWords * 0.8)), // לפחות 80% מהממוצע הטוב
-                
-                // טווח מחירים מהנתונים האמיתיים
-                priceRange: {
-                    min: Math.min(0.6, avgGoodPriceRatio * 0.7), // 0.68
-                    max: Math.max(1.4, avgGoodPriceRatio * 1.4), // 1.37
-                    ideal: avgGoodPriceRatio, // 0.975
-                    badAvg: avgBadPriceRatio // 1.066
-                },
-                
-                // חוקים ספציפיים שנלמדו
-                specificRules: extractSpecificRules(trainingData),
-                
-                // הגדרות איכות
-                qualityThreshold: 55, // נמוך יותר כי הנתונים מדויקים
-                maxAlternatives: 5,
-                confidenceBonus: metadata.goodDecisions > 20 ? 5 : 0 // בונוס לדאטה עשירה
-            };
+            // יחידת מידה - בינוני אצלך
+            sameUnit: unitAccuracy > 0.6 ? 10 : 5,
+        },
+        
+        // ספים מבוססים על הנתונים שלך
+        minSharedWords: Math.max(2, Math.round(avgGoodSharedWords * 0.7)), // לפחות 70% מהממוצע הטוב שלך (1.8)
+        
+        // טווח מחירים מהנתונים שלך (טובים: 0.94, רעים: 1.04)
+        priceRange: {
+            min: Math.max(0.5, avgGoodPriceRatio - 0.3), // 0.64
+            max: Math.min(1.5, avgBadPriceRatio + 0.2), // 1.24
+            ideal: avgGoodPriceRatio, // 0.94
+            badAvg: avgBadPriceRatio // 1.04
+        },
+        
+        // חוקים ספציפיים שנלמדו מהלוג שלך
+        specificRules: extractSpecificRulesFromLog(trainingData),
+        
+        // הגדרות איכות - מחמירות יותר כי הנתונים שלך ברורים
+        qualityThreshold: 70, // גבוה יותר כי יש לך דאטה טובה
+        maxAlternatives: 3, // פחות אבל איכותיים יותר
+        confidenceBonus: metadata.goodDecisions > 15 ? 10 : 0, // בונוס לדאטה עשירה
+        
+        // בונוס למילים משותפות גבוהות (התובנה החזקה שלך)
+        sharedWordsBonus: avgGoodSharedWords >= 2.5 ? 15 : 0
+    };
 
-            displayLearningAnalysis();
-        }
+    displayLearningAnalysis();
+}
         
         function extractSpecificRules(trainingData) {
             const rules = {
@@ -384,64 +399,74 @@
         }
 
         function displayLearningAnalysis() {
-            const analysisHTML = `
-                <div class="rule-card p-4 rounded-lg">
-                    <h3 class="font-semibold mb-2">📚 למידה מקטגוריית "${learnedRules.category}"</h3>
-                    <div class="text-sm space-y-1">
-                        <div>🎯 ${learnedRules.totalTrainingDecisions} החלטות אימון</div>
-                        <div>📈 ${learnedRules.accuracy}% דיוק כללי</div>
-                        <div>🏆 ${learnedRules.confidenceBonus > 0 ? 'דאטה עשירה - בונוס איכות!' : 'דאטה בסיסית'}</div>
-                    </div>
-                </div>
-                
-                <div class="rule-card p-4 rounded-lg">
-                    <h3 class="font-semibold mb-2">⚖️ משקלי חשיבות מהנתונים:</h3>
-                    <div class="text-sm space-y-1">
-                        <div>🏷️ אותו מותג: <span class="font-bold">${learnedRules.weights.sameBrand.toFixed(1)}%</span></div>
-                        <div>📏 יחידת מידה זהה: <span class="font-bold">${learnedRules.weights.sameUnit.toFixed(1)}%</span></div>
-                        <div>📝 מילים משותפות: <span class="font-bold">${learnedRules.weights.sharedWords.toFixed(1)}%</span></div>
-                        <div>💰 יחס מחירים: <span class="font-bold">${learnedRules.weights.priceRatio}%</span></div>
-                        ${learnedRules.weights.pricePreference > 0 ? 
-                            `<div>💸 בונוס זול יותר: <span class="font-bold">${learnedRules.weights.pricePreference}%</span></div>` : ''}
-                    </div>
-                </div>
-                
-                <div class="rule-card p-4 rounded-lg">
-                    <h3 class="font-semibold mb-2">🎯 חוקי איכות:</h3>
-                    <div class="text-sm space-y-1">
-                        <div>📊 מינימום מילים משותפות: <span class="font-bold">${learnedRules.minSharedWords}</span></div>
-                        <div>💵 טווח מחירים אידיאלי: <span class="font-bold">${learnedRules.priceRange.min.toFixed(2)} - ${learnedRules.priceRange.max.toFixed(2)}</span></div>
-                        <div>🎯 מחיר אידיאלי: <span class="font-bold">${learnedRules.priceRange.ideal.toFixed(3)}</span> (טובים) vs <span class="text-red-600">${learnedRules.priceRange.badAvg.toFixed(3)}</span> (רעים)</div>
-                        <div>⭐ סף איכות: <span class="font-bold">${learnedRules.qualityThreshold}%</span></div>
-                    </div>
-                </div>
-                
-                ${learnedRules.specificRules.avoidPatterns.length > 0 ? `
-                <div class="rule-card p-4 rounded-lg border-red-200">
-                    <h3 class="font-semibold mb-2 text-red-700">⚠️ דפוסים להימנעות:</h3>
-                    <div class="text-sm space-y-1">
-                        ${learnedRules.specificRules.avoidPatterns.slice(0, 3).map(pattern => 
-                            `<div class="text-red-600">• ${pattern.reason}</div>`
-                        ).join('')}
-                    </div>
-                </div>
-                ` : ''}
-                
-                ${learnedRules.specificRules.preferPatterns.length > 0 ? `
-                <div class="rule-card p-4 rounded-lg border-green-200">
-                    <h3 class="font-semibold mb-2 text-green-700">✅ דפוסים מועדפים:</h3>
-                    <div class="text-sm space-y-1">
-                        ${learnedRules.specificRules.preferPatterns.slice(0, 2).map(pattern => 
-                            `<div class="text-green-600">• ${pattern.reason}</div>`
-                        ).join('')}
-                    </div>
-                </div>
-                ` : ''}
-            `;
-            
-            document.getElementById('learningAnalysis').innerHTML = analysisHTML;
-        }
-
+    const analysisHTML = `
+        <div class="rule-card p-4 rounded-lg border-green-200">
+            <h3 class="font-semibold mb-2 text-green-700">🎯 ניתוח הלוג שלך - תובנות:</h3>
+            <div class="text-sm space-y-1">
+                <div class="text-green-600">✅ מילים משותפות = גורם מכריע (טובים: 2.6, רעים: 1.0)</div>
+                <div class="text-green-600">✅ מחיר זול יותר = עדיף (טובים: 0.94, רעים: 1.04)</div>
+                <div class="text-yellow-600">⚠️ אותו מותג = לא מבטיח (50% דיוק בלבד)</div>
+                <div class="text-red-600">❌ 0 מילים משותפות = דלג לגמרי</div>
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">📚 למידה מקטגוריית "${learnedRules.category}"</h3>
+            <div class="text-sm space-y-1">
+                <div>🎯 ${learnedRules.totalTrainingDecisions} החלטות אימון</div>
+                <div>📈 ${learnedRules.accuracy}% דיוק כללי</div>
+                <div>🏆 מבוסס על הלוג הספציפי שלך</div>
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">⚖️ משקלים מותאמים מהלוג שלך:</h3>
+            <div class="text-sm space-y-1">
+                <div>📝 מילים משותפות: <span class="font-bold text-green-600">${learnedRules.weights.sharedWords.toFixed(1)}%</span> (הכי חשוב!)</div>
+                <div>💰 יחס מחירים: <span class="font-bold">${learnedRules.weights.priceRatio}%</span></div>
+                <div>📏 יחידת מידה זהה: <span class="font-bold">${learnedRules.weights.sameUnit}%</span></div>
+                <div>🏷️ אותו מותג: <span class="font-bold text-orange-600">${learnedRules.weights.sameBrand}%</span> (נמוך - לא מועיל)</div>
+                ${learnedRules.sharedWordsBonus > 0 ? 
+                    `<div>🎁 בונוס מילים משותפות: <span class="font-bold text-green-600">+${learnedRules.sharedWordsBonus}%</span></div>` : ''}
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">🎯 חוקי איכות מותאמים:</h3>
+            <div class="text-sm space-y-1">
+                <div>📊 מינימום מילים משותפות: <span class="font-bold text-green-600">${learnedRules.minSharedWords}</span> (מהלוג שלך)</div>
+                <div>💵 טווח מחירים: <span class="font-bold">${learnedRules.priceRange.min.toFixed(2)} - ${learnedRules.priceRange.max.toFixed(2)}</span></div>
+                <div>🎯 מחיר אידיאלי: <span class="font-bold text-green-600">${learnedRules.priceRange.ideal.toFixed(3)}</span> vs רע: <span class="text-red-600">${learnedRules.priceRange.badAvg.toFixed(3)}</span></div>
+                <div>⭐ סף איכות: <span class="font-bold">${learnedRules.qualityThreshold}%</span> (מחמיר יותר)</div>
+                <div>🔢 מקסימום תחליפים: <span class="font-bold">${learnedRules.maxAlternatives}</span> (איכותיים יותר)</div>
+            </div>
+        </div>
+        
+        ${learnedRules.specificRules.avoidPatterns.length > 0 ? `
+        <div class="rule-card p-4 rounded-lg border-red-200">
+            <h3 class="font-semibold mb-2 text-red-700">⚠️ דפוסים להימנעות (מהלוג שלך):</h3>
+            <div class="text-sm space-y-1">
+                ${learnedRules.specificRules.avoidPatterns.map(pattern => 
+                    `<div class="text-red-600">• ${pattern.reason}</div>`
+                ).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${learnedRules.specificRules.preferPatterns.length > 0 ? `
+        <div class="rule-card p-4 rounded-lg border-green-200">
+            <h3 class="font-semibold mb-2 text-green-700">✅ דפוסים מועדפים (מהלוג שלך):</h3>
+            <div class="text-sm space-y-1">
+                ${learnedRules.specificRules.preferPatterns.map(pattern => 
+                    `<div class="text-green-600">• ${pattern.reason}</div>`
+                ).join('')}
+            </div>
+        </div>
+        ` : ''}
+    `;
+    
+    document.getElementById('learningAnalysis').innerHTML = analysisHTML;
+}
         function startProcessing() {
             document.getElementById('step2').classList.add('hidden');
             document.getElementById('step3').classList.remove('hidden');
@@ -567,28 +592,115 @@
                 .sort((a, b) => b.qualityScore - a.qualityScore)
                 .slice(0, rules.maxAlternatives);
         }
+function calculateAlternativeScore(target, candidate, rules) {
+    let score = 0;
+    let bonuses = 0;
 
-        function calculateAlternativeScore(target, candidate, rules) {
-            let score = 0;
+    // מילים משותפות - הפקטור החשוב ביותר מהלוג שלך
+    const targetWords = target.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const candidateWords = candidate.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const sharedWords = targetWords.filter(word => candidateWords.includes(word));
+    
+    // אם אין מילים משותפות - דלג לגמרי (תובנה מהלוג שלך)
+    if (sharedWords.length === 0) {
+        return 0; // לא רלוונטי בכלל
+    }
+    
+    // ציון מילים משותפות מתקדם
+    if (sharedWords.length >= rules.minSharedWords) {
+        const wordScore = (sharedWords.length / Math.max(targetWords.length, candidateWords.length)) * rules.weights.sharedWords;
+        score += wordScore;
+        
+        // בונוס למילים משותפות גבוהות (מהלוג שלך: טובים = 2.6 ממוצע)
+        if (sharedWords.length >= 3) {
+            bonuses += rules.sharedWordsBonus || 10;
+        }
+    }
 
-            // 1. מותג זהה
-            if (target.manufacturer === candidate.manufacturer && target.manufacturer.trim() !== '') {
-                score += rules.weights.sameBrand;
-            }
+    // יחס מחירים - מהלוג שלך: טובים = 0.94, רעים = 1.04
+    const priceRatio = calculatePriceRatio(target, candidate);
+    if (priceRatio >= rules.priceRange.min && priceRatio <= rules.priceRange.max) {
+        // בונוס למוצרים זולים יותר (תובנה מהלוג שלך)
+        if (priceRatio <= 1.0) {
+            const priceScore = (1.2 - priceRatio) * rules.weights.priceRatio;
+            score += priceScore;
+            bonuses += 5; // בונוס לזול יותר
+        } else {
+            const priceScore = (1.5 - priceRatio) * rules.weights.priceRatio;
+            score += priceScore;
+        }
+    } else if (priceRatio > rules.priceRange.max) {
+        // קנס כבד למוצרים יקרים מדי
+        score -= 20;
+    }
 
-            // 2. יחידת מידה זהה  
-            if (target.unitOfMeasure === candidate.unitOfMeasure) {
-                score += rules.weights.sameUnit;
-            }
+    // מותג זהה - משקל נמוך מהלוג שלך (50% דיוק בלבד)
+    if (target.manufacturer === candidate.manufacturer && target.manufacturer.trim() !== '') {
+        score += rules.weights.sameBrand;
+    }
 
-            // 3. מילים משותפות
-            const targetWords = target.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-            const candidateWords = candidate.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-            const sharedWords = targetWords.filter(word => candidateWords.includes(word));
-            
-            if (sharedWords.length >= rules.minSharedWords) {
-                score += (sharedWords.length / rules.minSharedWords) * rules.weights.sharedWords;
-            }
+    // יחידת מידה זהה
+    if (target.unitOfMeasure === candidate.unitOfMeasure) {
+        score += rules.weights.sameUnit;
+    }
+
+    // הוספת בונוסים
+    score += bonuses;
+
+    return Math.min(score, 100);
+}
+        
+        function extractSpecificRulesFromLog(trainingData) {
+    const rules = {
+        avoidPatterns: [],
+        preferPatterns: [],
+        brandExceptions: [],
+        categorySpecific: []
+    };
+    
+    // זיהוי מוצרים לא רלוונטיים (0 מילים משותפות)
+    const irrelevantCases = trainingData.filter(d => d.decision === 'bad' && d.factors.sharedWordsCount === 0);
+    if (irrelevantCases.length > 0) {
+        rules.avoidPatterns.push({
+            type: 'irrelevant_products',
+            threshold: 0,
+            reason: 'דלג על מוצרים ללא מילים משותפות',
+            examples: irrelevantCases.slice(0, 2).map(c => `${c.baseProduct} ≠ ${c.candidateProduct}`)
+        });
+    }
+    
+    // זיהוי בעיות עם אותו מותג (כמו יטבתה)
+    const sameBrandBad = trainingData.filter(d => 
+        d.decision === 'bad' && 
+        d.factors.sameBrand && 
+        d.factors.sharedWordsCount >= 1
+    );
+    if (sameBrandBad.length > 0) {
+        rules.avoidPatterns.push({
+            type: 'same_brand_different_purpose',
+            reason: 'אותו מותג לא מבטיח התאמה',
+            examples: sameBrandBad.slice(0, 2).map(c => `${c.baseProduct} ≠ ${c.candidateProduct}`)
+        });
+    }
+    
+    // זיהוי תחליפים טובים עם מותגים שונים
+    const differentBrandGood = trainingData.filter(d => 
+        d.decision === 'good' && 
+        !d.factors.sameBrand && 
+        d.factors.sharedWordsCount >= 2
+    );
+    if (differentBrandGood.length > 0) {
+        rules.preferPatterns.push({
+            type: 'cross_brand_with_shared_words',
+            examples: differentBrandGood.slice(0, 2).map(g => 
+                `${g.baseProduct} → ${g.candidateProduct} (${g.factors.sharedWordsCount} מילים)`
+            ),
+            reason: 'מותגים שונים בסדר אם יש מילים משותפות'
+        });
+    }
+    
+    return rules;
+}
 
             // 4. יחס מחירים
             const priceRatio = calculatePriceRatio(target, candidate);
