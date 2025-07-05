@@ -147,6 +147,7 @@
         let processedProducts = null;
 
         async function loadProductsFile(file) {
+            alert("הפונקציה loadProductsFile פועלת!");
             try {
                 const text = await file.text();
                 productsData = JSON.parse(text);
