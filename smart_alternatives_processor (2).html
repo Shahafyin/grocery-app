@@ -284,58 +284,73 @@
         }
 
         function analyzeLearningPatterns() {
-            const patterns = tinderReport.patterns;
-            const metadata = tinderReport.metadata;
-            const trainingData = tinderReport.trainingData;
+    const patterns = tinderReport.patterns;
+    const metadata = tinderReport.metadata;
+    const trainingData = tinderReport.trainingData;
+    
+    // ניתוח מתקדם של המקרים הספציפיים
+    const goodCases = trainingData.filter(d => d.decision === 'good');
+    const badCases = trainingData.filter(d => d.decision === 'bad');
+    
+    // חישוב סטטיסטיקות מתקדמות מהלוג האמיתי
+    const avgGoodSharedWords = goodCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / goodCases.length;
+    const avgBadSharedWords = badCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / badCases.length;
+    
+    const avgGoodPriceRatio = goodCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / goodCases.length;
+    const avgBadPriceRatio = badCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / badCases.length;
+    
+    // חישוב כוח ההפרדה של כל פקטור (כמה טוב הוא מבדיל בין טוב לרע)
+    const sharedWordsSeparation = Math.abs(avgGoodSharedWords - avgBadSharedWords);
+    const priceSeparation = Math.abs(avgGoodPriceRatio - avgBadPriceRatio);
+    const brandAccuracy = patterns.sameBrand.accuracy;
+    const unitAccuracy = patterns.sameUnitOfMeasure.accuracy;
+    
+    // יצירת חוקי למידה מבוססי הנתונים האמיתיים שלך
+    learnedRules = {
+        category: metadata.category,
+        totalTrainingDecisions: metadata.totalDecisions,
+        accuracy: (metadata.goodDecisions / metadata.totalDecisions * 100).toFixed(1),
+        
+        // משקלים מבוססי כוח ההפרדה מהנתונים שלך
+        weights: {
+            // מילים משותפות - הפקטור החזק ביותר שלך (הפרדה של 1.6)
+            sharedWords: Math.min(60, sharedWordsSeparation * 40), // עד 60%
             
-            // ניתוח מתקדם של המקרים הספציפיים
-            const goodCases = trainingData.filter(d => d.decision === 'good');
-            const badCases = trainingData.filter(d => d.decision === 'bad');
+            // מחיר - גם חשוב אצלך (הפרדה של 0.1)
+            priceRatio: Math.min(25, priceSeparation * 250), // עד 25%
             
-            // חישוב סטטיסטיקות מתקדמות
-            const avgGoodSharedWords = goodCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / goodCases.length;
-            const avgBadSharedWords = badCases.reduce((sum, c) => sum + (c.factors.sharedWordsCount || 0), 0) / badCases.length;
+            // מותג - לא מועיל אצלך (50% דיוק)
+            sameBrand: brandAccuracy > 0.7 ? 15 : 5, // רק 5% אם לא מועיל
             
-            const avgGoodPriceRatio = goodCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / goodCases.length;
-            const avgBadPriceRatio = badCases.reduce((sum, c) => sum + (c.factors.priceRatio || 1), 0) / badCases.length;
-            
-            // יצירת חוקי למידה מתקדמים מהדוח האמיתי שלך
-            learnedRules = {
-                category: metadata.category,
-                totalTrainingDecisions: metadata.totalDecisions,
-                accuracy: (metadata.goodDecisions / metadata.totalDecisions * 100).toFixed(1),
-                
-                // משקלים מבוססים על הנתונים האמיתיים
-                weights: {
-                    sameBrand: patterns.sameBrand.accuracy * 80, // 60%
-                    sameUnit: patterns.sameUnitOfMeasure.accuracy * 70, // 53%
-                    sharedWords: Math.max(10, (avgGoodSharedWords - avgBadSharedWords) * 25), // 45
-                    priceRatio: 35, // חשוב מאוד למחיר
-                    pricePreference: avgGoodPriceRatio < 1.0 ? 10 : 0 // בונוס למוצרים זולים יותר
-                },
-                
-                // ספים מבוססים על הנתונים
-                minSharedWords: Math.max(1, Math.round(avgGoodSharedWords * 0.8)), // לפחות 80% מהממוצע הטוב
-                
-                // טווח מחירים מהנתונים האמיתיים
-                priceRange: {
-                    min: Math.min(0.6, avgGoodPriceRatio * 0.7), // 0.68
-                    max: Math.max(1.4, avgGoodPriceRatio * 1.4), // 1.37
-                    ideal: avgGoodPriceRatio, // 0.975
-                    badAvg: avgBadPriceRatio // 1.066
-                },
-                
-                // חוקים ספציפיים שנלמדו
-                specificRules: extractSpecificRules(trainingData),
-                
-                // הגדרות איכות
-                qualityThreshold: 55, // נמוך יותר כי הנתונים מדויקים
-                maxAlternatives: 5,
-                confidenceBonus: metadata.goodDecisions > 20 ? 5 : 0 // בונוס לדאטה עשירה
-            };
+            // יחידת מידה - בינוני אצלך
+            sameUnit: unitAccuracy > 0.6 ? 10 : 5,
+        },
+        
+        // ספים מבוססים על הנתונים שלך
+        minSharedWords: Math.max(2, Math.round(avgGoodSharedWords * 0.7)), // לפחות 70% מהממוצע הטוב שלך (1.8)
+        
+        // טווח מחירים מהנתונים שלך (טובים: 0.94, רעים: 1.04)
+        priceRange: {
+            min: Math.max(0.5, avgGoodPriceRatio - 0.3), // 0.64
+            max: Math.min(1.5, avgBadPriceRatio + 0.2), // 1.24
+            ideal: avgGoodPriceRatio, // 0.94
+            badAvg: avgBadPriceRatio // 1.04
+        },
+        
+        // חוקים ספציפיים שנלמדו מהלוג שלך
+        specificRules: extractSpecificRulesFromLog(trainingData),
+        
+        // הגדרות איכות - מחמירות יותר כי הנתונים שלך ברורים
+        qualityThreshold: 70, // גבוה יותר כי יש לך דאטה טובה
+        maxAlternatives: 3, // פחות אבל איכותיים יותר
+        confidenceBonus: metadata.goodDecisions > 15 ? 10 : 0, // בונוס לדאטה עשירה
+        
+        // בונוס למילים משותפות גבוהות (התובנה החזקה שלך)
+        sharedWordsBonus: avgGoodSharedWords >= 2.5 ? 15 : 0
+    };
 
-            displayLearningAnalysis();
-        }
+    displayLearningAnalysis();
+}
         
         function extractSpecificRules(trainingData) {
             const rules = {
