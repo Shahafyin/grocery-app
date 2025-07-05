@@ -546,29 +546,11 @@ function displayCombinedAnalysis() {
 }
         
         function startProcessing() {
-            document.getElementById('step3').classList.add('hidden');
-            document.getElementById('step4').classList.remove('hidden');
-            
-            // סימולציה של עיבוד
-            let progress = 0;
-            const interval = setInterval(() => {
-                progress += 10;
-                document.getElementById('progressBar').style.width = progress + '%';
-                document.getElementById('processingStatus').textContent = 
-                    selectedMode === 'improve' ? 
-                    `משפר תחליפים קיימים... ${progress}%` : 
-                    `יוצר תחליפים חדשים... ${progress}%`;
-                
-                if (progress >= 100) {
-                    clearInterval(interval);
-                    setTimeout(() => {
-                        document.getElementById('step4').classList.add('hidden');
-                        document.getElementById('step5').classList.remove('hidden');
-                        displayFinalResults();
-                    }, 500);
-                }
-            }, 200);
-        }
+    document.getElementById('step3').classList.add('hidden');
+    document.getElementById('step4').classList.remove('hidden');
+    
+    processProductsWithAlternatives(); // קריאה לעיבוד אמיתי
+}
 
         function displayFinalResults() {
             const newAlternatives = selectedMode === 'improve' ? 850 : 2400;
@@ -617,17 +599,419 @@ function displayCombinedAnalysis() {
             }
         }
 
-        function downloadResults() {
-            alert(`הורדת קובץ ${selectedMode === 'improve' ? 'משופר' : 'חדש'}!`);
-        }
-
-        function downloadReport() {
-            alert('הורדת דוח שיפורים מפורט!');
-        }
-
         function resetAll() {
             location.reload();
         }
+
+function startProcessing() {
+    document.getElementById('step3').classList.add('hidden');
+    document.getElementById('step4').classList.remove('hidden');
+    
+    processProductsWithAlternatives(); // קריאה לעיבוד אמיתי
+}
+
+async function processProductsWithAlternatives() {
+    const products = productsData.products;
+    const productIds = Object.keys(products);
+    const totalProducts = productIds.length;
+    
+    let processedCount = 0;
+    const results = { ...products };
+    const stats = {
+        totalProducts: totalProducts,
+        productsWithAlternatives: 0,
+        totalAlternativesCreated: 0,
+        newAlternativesAdded: 0, // חדש למצב שיפור
+        improvedProducts: 0,     // חדש למצב שיפור
+        categoryMatches: 0,
+        averageQualityScore: 0,
+        processingTime: Date.now()
+    };
+
+    updateProgress(0, 'מתחיל עיבוד מוצרים...');
+
+    // עיבוד כל מוצר
+    for (let i = 0; i < productIds.length; i++) {
+        const productId = productIds[i];
+        const product = products[productId];
+        
+        // שמירת תחליפים קיימים במצב שיפור
+        const existingAlternatives = (selectedMode === 'improve' && product.smartAlternatives) ? 
+            [...product.smartAlternatives] : [];
+        
+        // חיפוש תחליפים חדשים
+        const newAlternatives = findSmartAlternatives(product, products, learnedRules);
+        
+        // שילוב תחליפים קיימים וחדשים במצב שיפור
+        let finalAlternatives = newAlternatives;
+        let newCount = newAlternatives.length;
+        
+        if (selectedMode === 'improve' && existingAlternatives.length > 0) {
+            // מיזוג תחליפים קיימים וחדשים (ללא כפילויות)
+            const existingCodes = new Set(existingAlternatives.map(alt => alt.itemCode));
+            const uniqueNewAlternatives = newAlternatives.filter(alt => !existingCodes.has(alt.itemCode));
+            
+            finalAlternatives = [...existingAlternatives, ...uniqueNewAlternatives];
+            newCount = uniqueNewAlternatives.length;
+            
+            if (newCount > 0) {
+                stats.improvedProducts++;
+            }
+        }
+        
+        // הוספת התחליפים למוצר
+        results[productId] = {
+            ...product,
+            smartAlternatives: finalAlternatives,
+            alternativesCount: finalAlternatives.length,
+            hasQualityAlternatives: finalAlternatives.some(alt => alt.qualityScore >= learnedRules.qualityThreshold),
+            // מטאדטה נוספת למצב שיפור
+            ...(selectedMode === 'improve' && {
+                originalAlternativesCount: existingAlternatives.length,
+                newAlternativesCount: newCount,
+                wasImproved: newCount > 0
+            })
+        };
+
+        // עדכון סטטיסטיקות
+        if (finalAlternatives.length > 0) {
+            stats.productsWithAlternatives++;
+            stats.totalAlternativesCreated += finalAlternatives.length;
+            stats.newAlternativesAdded += newCount;
+            
+            const avgScore = finalAlternatives.reduce((sum, alt) => sum + alt.qualityScore, 0) / finalAlternatives.length;
+            stats.averageQualityScore += avgScore;
+        }
+
+        // בדיקת התאמה לקטגוריה
+        const productCategory = product.smartCategory || product.category || 'לא ידוע';
+        if (learnedRules.combinedLearning.categories.includes(productCategory)) {
+            stats.categoryMatches++;
+        }
+
+        processedCount++;
+        const progress = (processedCount / totalProducts) * 100;
+        
+        // עדכון ממשק כל 50 מוצרים
+        if (processedCount % 50 === 0 || processedCount === totalProducts) {
+            const statusText = selectedMode === 'improve' ? 
+                `משפר מוצר ${processedCount}/${totalProducts}` :
+                `מעבד מוצר ${processedCount}/${totalProducts}`;
+            
+            updateProgress(progress, statusText);
+            addProcessingDetail(`✅ ${product.itemName} - ${finalAlternatives.length} תחליפים (${newCount} חדשים)`);
+            
+            // השהיה קצרה לממשק
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+
+    // חישוב סטטיסטיקות סופיות
+    stats.averageQualityScore = stats.productsWithAlternatives > 0 ? 
+        stats.averageQualityScore / stats.productsWithAlternatives : 0;
+    stats.processingTime = Date.now() - stats.processingTime;
+
+    // שמירת תוצאות
+    processedProducts = {
+        metadata: {
+            ...productsData.metadata,
+            alternativesEngine: {
+                version: "2.0-enhanced",
+                mode: selectedMode,
+                basedOnCategories: learnedRules.combinedLearning.categories,
+                trainingDecisions: learnedRules.combinedLearning.totalDecisions,
+                processingDate: new Date().toISOString(),
+                processingStats: stats,
+                learnedRules: learnedRules,
+                originalAlternativesCount: selectedMode === 'improve' ? originalAlternativesCount : 0
+            }
+        },
+        products: results
+    };
+
+    // מעבר לתוצאות
+    document.getElementById('step4').classList.add('hidden');
+    document.getElementById('step5').classList.remove('hidden');
+    displayFinalResults();
+}
+
+function findSmartAlternatives(targetProduct, allProducts, rules) {
+    const alternatives = [];
+    const targetCategory = targetProduct.smartCategory || targetProduct.category || 'לא ידוע';
+    
+    // רק מוצרים מאותה קטגוריה
+    const categoryProducts = Object.values(allProducts).filter(product => 
+        product.itemCode !== targetProduct.itemCode &&
+        (product.smartCategory || product.category || 'לא ידוע') === targetCategory
+    );
+
+    // קביעת משקלים לפי קטגוריה
+    const categoryWeights = rules.categoryWeights && rules.categoryWeights[targetCategory] ? 
+        rules.categoryWeights[targetCategory] : rules.weights;
+
+    for (const candidate of categoryProducts) {
+        const score = calculateAlternativeScore(targetProduct, candidate, categoryWeights);
+        
+        // השתמש בסף איכות ספציפי לקטגוריה
+        const threshold = rules.categoryWeights && rules.categoryWeights[targetCategory] ? 
+            rules.categoryWeights[targetCategory].qualityThreshold : rules.qualityThreshold;
+        
+        if (score >= threshold) {
+            alternatives.push({
+                itemCode: candidate.itemCode,
+                itemName: candidate.itemName,
+                manufacturer: candidate.manufacturer,
+                qualityScore: Math.round(score),
+                matchReason: generateMatchReason(targetProduct, candidate, categoryWeights),
+                priceComparison: calculatePriceComparison(targetProduct, candidate),
+                confidence: score >= 80 ? 'high' : score >= 65 ? 'medium' : 'low',
+                category: targetCategory
+            });
+        }
+    }
+
+    // מיון לפי איכות ומגבלה על כמות
+    return alternatives
+        .sort((a, b) => b.qualityScore - a.qualityScore)
+        .slice(0, rules.maxAlternatives);
+}
+
+function calculateAlternativeScore(target, candidate, weights) {
+    let score = 0;
+    let bonuses = 0;
+
+    // מילים משותפות
+    const targetWords = target.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const candidateWords = candidate.itemName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const sharedWords = targetWords.filter(word => candidateWords.includes(word));
+    
+    if (sharedWords.length === 0) {
+        return 0; // לא רלוונטי בכלל
+    }
+    
+    // ציון מילים משותפות
+    const wordScore = (sharedWords.length / Math.max(targetWords.length, candidateWords.length)) * weights.sharedWords;
+    score += wordScore;
+    
+    // בונוס למילים משותפות גבוהות
+    if (sharedWords.length >= 3) {
+        bonuses += 10;
+    }
+
+    // יחס מחירים
+    const priceRatio = calculatePriceRatio(target, candidate);
+    if (priceRatio >= 0.5 && priceRatio <= 1.5) {
+        if (priceRatio <= 1.0) {
+            score += (1.2 - priceRatio) * weights.priceRatio;
+            bonuses += 5; // בונוס לזול יותר
+        } else {
+            score += (1.5 - priceRatio) * weights.priceRatio;
+        }
+    }
+
+    // מותג זהה
+    if (target.manufacturer === candidate.manufacturer && target.manufacturer.trim() !== '') {
+        score += weights.sameBrand;
+    }
+
+    // יחידת מידה זהה
+    if (target.unitOfMeasure === candidate.unitOfMeasure) {
+        score += weights.sameUnit;
+    }
+
+    return Math.min(score + bonuses, 100);
+}
+
+function calculatePriceRatio(target, candidate) {
+    const targetPrice = getAveragePrice(target);
+    const candidatePrice = getAveragePrice(candidate);
+    
+    return targetPrice > 0 ? candidatePrice / targetPrice : 1;
+}
+
+function getAveragePrice(product) {
+    const prices = Object.values(product.prices || {})
+        .filter(p => p.available && p.price > 0)
+        .map(p => p.price);
+    
+    return prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+}
+
+function generateMatchReason(target, candidate, weights) {
+    const reasons = [];
+    
+    if (target.manufacturer === candidate.manufacturer && target.manufacturer.trim() !== '') {
+        reasons.push('אותו מותג');
+    }
+    
+    if (target.unitOfMeasure === candidate.unitOfMeasure) {
+        reasons.push('אותה יחידת מידה');
+    }
+
+    const targetWords = target.itemName.toLowerCase().split(/\s+/);
+    const candidateWords = candidate.itemName.toLowerCase().split(/\s+/);
+    const sharedWords = targetWords.filter(word => candidateWords.includes(word));
+    
+    if (sharedWords.length >= 2) {
+        reasons.push(`${sharedWords.length} מילים משותפות`);
+    }
+
+    const priceRatio = calculatePriceRatio(target, candidate);
+    if (priceRatio <= 1.0) {
+        reasons.push('מחיר דומה או זול יותר');
+    }
+
+    return reasons.length > 0 ? reasons.join(', ') : 'תחליף איכותי';
+}
+
+function calculatePriceComparison(target, candidate) {
+    const targetPrice = getAveragePrice(target);
+    const candidatePrice = getAveragePrice(candidate);
+    
+    if (targetPrice === 0 || candidatePrice === 0) {
+        return { type: 'unknown', ratio: 1, difference: 0 };
+    }
+
+    const ratio = candidatePrice / targetPrice;
+    const difference = candidatePrice - targetPrice;
+    
+    let type = 'similar';
+    if (ratio < 0.9) type = 'cheaper';
+    else if (ratio > 1.1) type = 'expensive';
+
+    return {
+        type: type,
+        ratio: ratio,
+        difference: difference,
+        targetPrice: targetPrice,
+        candidatePrice: candidatePrice
+    };
+}
+
+function displayFinalResults() {
+    const stats = processedProducts.metadata.alternativesEngine.processingStats;
+    const totalProducts = stats.totalProducts;
+    
+    document.getElementById('finalStats').innerHTML = `
+        <div class="text-sm space-y-1">
+            <div>📦 ${totalProducts} מוצרים עובדו</div>
+            ${selectedMode === 'improve' ? 
+                `<div>🔗 תחליפים קיימים: ${originalAlternativesCount}</div>
+                 <div>✨ תחליפים חדשים: ${stats.newAlternativesAdded}</div>
+                 <div>📈 סה"כ תחליפים: ${stats.totalAlternativesCreated}</div>
+                 <div>⬆️ מוצרים ששופרו: ${stats.improvedProducts}</div>` :
+                `<div>✅ ${stats.productsWithAlternatives} קיבלו תחליפים (${(stats.productsWithAlternatives/totalProducts*100).toFixed(1)}%)</div>
+                 <div>🔗 ${stats.totalAlternativesCreated} תחליפים נוצרו</div>`
+            }
+            <div>🎯 ${stats.categoryMatches} מקטגוריות הלמידה</div>
+            <div>⭐ ${stats.averageQualityScore.toFixed(1)} ציון איכות ממוצע</div>
+            <div>⏱️ ${(stats.processingTime/1000).toFixed(1)} שניות עיבוד</div>
+        </div>
+    `;
+    
+    document.getElementById('learnedRules').innerHTML = `
+        <div class="text-sm space-y-1">
+            <div>🧠 למידה מ-${learnedRules.combinedLearning.totalSources} מקורות</div>
+            <div>🎯 דיוק כללי: ${learnedRules.combinedLearning.accuracy}%</div>
+            <div>🏆 קטגוריה מובילה: ${learnedRules.combinedLearning.bestCategory}</div>
+            <div>📊 סף איכות: ${learnedRules.qualityThreshold}%</div>
+            <div>🏷️ קטגוריות: ${learnedRules.combinedLearning.categories.join(', ')}</div>
+        </div>
+    `;
+    
+    if (selectedMode === 'improve') {
+        const improvementPercent = originalAlternativesCount > 0 ? 
+            ((stats.newAlternativesAdded / originalAlternativesCount) * 100).toFixed(0) : 'חדש';
+            
+        document.getElementById('comparisonResults').innerHTML = `
+            <div class="text-sm space-y-1">
+                <div>📊 ${improvementPercent}% שיפור בכמות התחליפים</div>
+                <div>⭐ איכות משופרת על בסיס ${learnedRules.combinedLearning.totalDecisions} החלטות</div>
+                <div>🔄 תחליפים קיימים נשמרו</div>
+                <div>✨ ${stats.newAlternativesAdded} תחליפים חדשים נוספו</div>
+                <div>⬆️ ${stats.improvedProducts} מוצרים קיבלו שיפורים</div>
+            </div>
+        `;
+    } else {
+        document.getElementById('comparisonResults').innerHTML = `
+            <div class="text-sm space-y-1">
+                <div>🆕 קובץ חדש נוצר מאפס</div>
+                <div>🎯 ${stats.totalAlternativesCreated} תחליפים איכותיים</div>
+                <div>📈 מבוסס על למידה משולבת מ-${learnedRules.combinedLearning.totalSources} קטגוריות</div>
+                <div>🧠 משקלים מותאמים לכל קטגוריה</div>
+            </div>
+        `;
+    }
+}
+
+function downloadResults() {
+    if (processedProducts) {
+        const dataStr = JSON.stringify(processedProducts, null, 2);
+        const dataBlob = new Blob([dataStr], {type: 'application/json'});
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(dataBlob);
+        
+        const filename = selectedMode === 'improve' ? 
+            'products_improved_alternatives.json' : 
+            'products_with_smart_alternatives.json';
+            
+        link.download = filename;
+        link.click();
+    } else {
+        alert('אין תוצאות להוריד. יש להשלים תחילה את העיבוד.');
+    }
+}
+
+function downloadReport() {
+    if (processedProducts) {
+        const stats = processedProducts.metadata.alternativesEngine.processingStats;
+        const rules = processedProducts.metadata.alternativesEngine.learnedRules;
+        
+        const reportContent = `
+דוח שיפורים - מעבד תחליפים חכם
+=====================================
+
+📊 סיכום כללי:
+- סה"כ מוצרים: ${stats.totalProducts}
+- מוצרים עם תחליפים: ${stats.productsWithAlternatives}
+- סה"כ תחליפים: ${stats.totalAlternativesCreated}
+${selectedMode === 'improve' ? `- תחליפים חדשים: ${stats.newAlternativesAdded}
+- מוצרים ששופרו: ${stats.improvedProducts}
+- תחליפים קיימים: ${processedProducts.metadata.alternativesEngine.originalAlternativesCount}` : ''}
+
+🧠 למידה:
+- מקורות לוג: ${rules.combinedLearning.totalSources}
+- סה"כ החלטות: ${rules.combinedLearning.totalDecisions}
+- דיוק כללי: ${rules.combinedLearning.accuracy}%
+- קטגוריה מובילה: ${rules.combinedLearning.bestCategory}
+
+⚖️ משקלים:
+- מילים משותפות: ${rules.weights.sharedWords}%
+- יחס מחירים: ${rules.weights.priceRatio}%
+- אותו מותג: ${rules.weights.sameBrand}%
+- יחידת מידה: ${rules.weights.sameUnit}%
+
+📈 ביצועים:
+- ציון איכות ממוצע: ${stats.averageQualityScore.toFixed(1)}
+- זמן עיבוד: ${(stats.processingTime/1000).toFixed(1)} שניות
+- סף איכות: ${rules.qualityThreshold}%
+
+תאריך: ${new Date().toLocaleString('he-IL')}
+        `;
+        
+        const reportBlob = new Blob([reportContent], {type: 'text/plain; charset=utf-8'});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(reportBlob);
+        link.download = `דוח_שיפורים_${new Date().toISOString().split('T')[0]}.txt`;
+        link.click();
+    } else {
+        alert('אין נתונים ליצירת דוח. יש להשלים תחילה את העיבוד.');
+    }
+}        
+
+
+        
     </script>
 </body>
 </html>
