@@ -150,6 +150,7 @@
             alert("הפונקציה loadProductsFile פועלת!");
             try {
                 const text = await file.text();
+                alert("קרא את הקובץ בהצלחה!");
                 productsData = JSON.parse(text);
                 
                 const count = Object.keys(productsData.products || {}).length;
@@ -162,9 +163,10 @@
         }
 
         async function loadTinderFile(file) {
+            alert("הפונקציה loadProductsFile פועלת!");
             try {
                 const text = await file.text();
-                
+                alert("קרא את הקובץ בהצלחה!");
                 // נסה לקרוא כ-JSON קודם
                 try {
                     tinderReport = JSON.parse(text);
