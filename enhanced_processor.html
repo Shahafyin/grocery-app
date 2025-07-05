@@ -339,91 +339,153 @@
         }
 
         function analyzeCombinedLearning() {
-            // שילוב כל הלוגים
-            const combinedMetadata = {
-                totalDecisions: 0,
-                goodDecisions: 0,
-                badDecisions: 0,
-                categories: new Set(),
-                sources: []
+    // שילוב כל הלוגים
+    const combinedMetadata = {
+        totalDecisions: 0,
+        goodDecisions: 0,
+        badDecisions: 0,
+        categories: new Set(),
+        sources: []
+    };
+    
+    const allTrainingData = [];
+    const categoryStats = {}; // סטטיסטיקות לכל קטגוריה
+    
+    tinderReports.forEach(report => {
+        const data = report.data;
+        const category = data.metadata.category || 'לא ידוע';
+        
+        // איסוף נתונים כלליים
+        combinedMetadata.totalDecisions += data.metadata.totalDecisions || 0;
+        combinedMetadata.goodDecisions += data.metadata.goodDecisions || 0;
+        combinedMetadata.badDecisions += data.metadata.badDecisions || 0;
+        combinedMetadata.categories.add(category);
+        combinedMetadata.sources.push(report.name);
+        
+        // סטטיסטיקות לכל קטגוריה
+        if (!categoryStats[category]) {
+            categoryStats[category] = {
+                decisions: data.metadata.totalDecisions,
+                accuracy: (data.metadata.goodDecisions / data.metadata.totalDecisions),
+                patterns: data.patterns,
+                brandAccuracy: data.patterns.sameBrand.accuracy,
+                unitAccuracy: data.patterns.sameUnitOfMeasure.accuracy,
+                sharedWordsSeparation: Math.abs(data.patterns.sharedWords.goodAvg - data.patterns.sharedWords.badAvg),
+                priceSeparation: Math.abs(data.patterns.priceRatio.goodAvg - data.patterns.priceRatio.badAvg)
             };
-            
-            const allTrainingData = [];
-            
-            tinderReports.forEach(report => {
-                const data = report.data;
-                combinedMetadata.totalDecisions += data.metadata.totalDecisions || 0;
-                combinedMetadata.goodDecisions += data.metadata.goodDecisions || 0;
-                combinedMetadata.badDecisions += data.metadata.badDecisions || 0;
-                combinedMetadata.categories.add(data.metadata.category || 'לא ידוע');
-                combinedMetadata.sources.push(report.name);
-                
-                if (data.trainingData) {
-                    allTrainingData.push(...data.trainingData);
-                }
-            });
-            
-            learnedRules = {
-                mode: selectedMode,
-                combinedLearning: {
-                    totalSources: tinderReports.length,
-                    totalDecisions: combinedMetadata.totalDecisions,
-                    accuracy: (combinedMetadata.goodDecisions / combinedMetadata.totalDecisions * 100).toFixed(1),
-                    categories: Array.from(combinedMetadata.categories),
-                    sources: combinedMetadata.sources
-                },
-                weights: {
-                    sharedWords: 60,
-                    priceRatio: 25,
-                    sameBrand: 5,
-                    sameUnit: 10
-                },
-                qualityThreshold: selectedMode === 'improve' ? 65 : 70, // יותר מקל במצב שיפור
-                maxAlternatives: 3,
-                improvementMode: selectedMode === 'improve'
-            };
-
-            displayCombinedAnalysis();
         }
-
-        function displayCombinedAnalysis() {
-            const analysisHTML = `
-                <div class="rule-card p-4 rounded-lg border-green-200">
-                    <h3 class="font-semibold mb-2 text-green-700">🎯 למידה משולבת:</h3>
-                    <div class="text-sm space-y-1">
-                        <div class="text-green-600">📊 ${learnedRules.combinedLearning.totalSources} קבצי לוג</div>
-                        <div class="text-green-600">🎯 ${learnedRules.combinedLearning.totalDecisions} החלטות סה"כ</div>
-                        <div class="text-green-600">📈 ${learnedRules.combinedLearning.accuracy}% דיוק כללי</div>
-                        <div class="text-blue-600">🏷️ קטגוריות: ${learnedRules.combinedLearning.categories.join(', ')}</div>
-                    </div>
-                </div>
-                
-                <div class="rule-card p-4 rounded-lg">
-                    <h3 class="font-semibold mb-2">🔧 מצב עבודה: ${selectedMode === 'improve' ? 'שיפור קובץ קיים' : 'יצירה חדשה'}</h3>
-                    <div class="text-sm space-y-1">
-                        ${selectedMode === 'improve' ? 
-                            `<div>🔗 תחליפים קיימים: ${originalAlternativesCount}</div>
-                             <div>⬆️ המערכת תשפר ותוסיף תחליפים</div>
-                             <div>🎯 סף איכות מקל: ${learnedRules.qualityThreshold}%</div>` :
-                            `<div>🆕 יצירת תחליפים מאפס</div>
-                             <div>🎯 סף איכות רגיל: ${learnedRules.qualityThreshold}%</div>`
-                        }
-                    </div>
-                </div>
-                
-                <div class="rule-card p-4 rounded-lg">
-                    <h3 class="font-semibold mb-2">📂 קבצי המקור:</h3>
-                    <div class="text-sm space-y-1">
-                        ${learnedRules.combinedLearning.sources.map(source => 
-                            `<div>📄 ${source}</div>`
-                        ).join('')}
-                    </div>
-                </div>
-            `;
-            
-            document.getElementById('learningAnalysis').innerHTML = analysisHTML;
+        
+        if (data.trainingData) {
+            allTrainingData.push(...data.trainingData);
         }
+    });
+    
+    // חישוב משקלים דינמיים לכל קטגוריה
+    const categoryWeights = {};
+    let bestCategory = null;
+    let bestAccuracy = 0;
+    
+    Object.keys(categoryStats).forEach(category => {
+        const stats = categoryStats[category];
+        
+        // זיהוי הקטגוריה עם הדיוק הטוב ביותר
+        if (stats.accuracy > bestAccuracy) {
+            bestAccuracy = stats.accuracy;
+            bestCategory = category;
+        }
+        
+        // חישוב משקלים חכמים לכל קטגוריה
+        categoryWeights[category] = {
+            // משקל מותג - רק אם יעיל (מעל 70%)
+            sameBrand: stats.brandAccuracy > 0.7 ? 20 : 3,
+            
+            // משקל יחידת מידה - רק אם יעיל (מעל 65%)
+            sameUnit: stats.unitAccuracy > 0.65 ? 15 : 5,
+            
+            // משקל מילים משותפות - תמיד הכי חשוב, אבל משתנה לפי הפרדה
+            sharedWords: Math.min(70, Math.max(40, stats.sharedWordsSeparation * 30)),
+            
+            // משקל מחיר - משתנה לפי כמה טוב זה מפריד
+            priceRatio: Math.min(25, Math.max(10, stats.priceSeparation * 150)),
+            
+            // סף איכות דינמי לפי דיוק הקטגוריה
+            qualityThreshold: Math.max(50, Math.min(80, stats.accuracy * 85))
+        };
+    });
+    
+    // חישוב ממוצע משוקלל של כל הקטגוריות
+    const averageWeights = {
+        sameBrand: 0,
+        sameUnit: 0,
+        sharedWords: 0,
+        priceRatio: 0
+    };
+    
+    let totalDecisions = 0;
+    Object.keys(categoryStats).forEach(category => {
+        const decisions = categoryStats[category].decisions;
+        const weights = categoryWeights[category];
+        
+        averageWeights.sameBrand += weights.sameBrand * decisions;
+        averageWeights.sameUnit += weights.sameUnit * decisions;
+        averageWeights.sharedWords += weights.sharedWords * decisions;
+        averageWeights.priceRatio += weights.priceRatio * decisions;
+        
+        totalDecisions += decisions;
+    });
+    
+    // חישוב ממוצע
+    Object.keys(averageWeights).forEach(key => {
+        averageWeights[key] = Math.round(averageWeights[key] / totalDecisions);
+    });
+    
+    learnedRules = {
+        mode: selectedMode,
+        combinedLearning: {
+            totalSources: tinderReports.length,
+            totalDecisions: combinedMetadata.totalDecisions,
+            accuracy: (combinedMetadata.goodDecisions / combinedMetadata.totalDecisions * 100).toFixed(1),
+            categories: Array.from(combinedMetadata.categories),
+            sources: combinedMetadata.sources,
+            bestCategory: bestCategory,
+            bestAccuracy: (bestAccuracy * 100).toFixed(1)
+        },
+        
+        // משקלים מותאמים מכל הקטגוריות
+        weights: averageWeights,
+        
+        // הגדרות מותאמות
+        qualityThreshold: selectedMode === 'improve' ? 
+            Math.max(55, averageWeights.sharedWords * 0.8) : // במצב שיפור - יותר מקל
+            Math.max(65, averageWeights.sharedWords * 0.9),   // במצב חדש - יותר מחמיר
+            
+        maxAlternatives: selectedMode === 'improve' ? 5 : 3, // יותר תחליפים במצב שיפור
+        
+        improvementMode: selectedMode === 'improve',
+        
+        // נתונים לכל קטגוריה
+        categoryStats: categoryStats,
+        categoryWeights: categoryWeights,
+        
+        // כללים מתקדמים
+        adaptiveRules: {
+            // הגדל משקל מילים משותפות לקטגוריות שזה עובד טוב שם
+            boostSharedWords: Object.keys(categoryStats).filter(cat => 
+                categoryStats[cat].sharedWordsSeparation > 1.0
+            ),
+            
+            // הפחת משקל מותג לקטגוריות שזה לא עובד
+            reduceBrandWeight: Object.keys(categoryStats).filter(cat => 
+                categoryStats[cat].brandAccuracy < 0.65
+            ),
+            
+            // התאם סף איכות לפי הקטגוריה הטובה ביותר
+            adaptiveThreshold: true
+        }
+    };
 
+    displayCombinedAnalysis();
+}
         function startProcessing() {
             document.getElementById('step3').classList.add('hidden');
             document.getElementById('step4').classList.remove('hidden');
