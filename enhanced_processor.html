@@ -486,6 +486,65 @@
 
     displayCombinedAnalysis();
 }
+function displayCombinedAnalysis() {
+    const analysisHTML = `
+        <div class="rule-card p-4 rounded-lg border-green-200">
+            <h3 class="font-semibold mb-2 text-green-700">🎯 למידה מותאמת לקטגוריות:</h3>
+            <div class="text-sm space-y-1">
+                <div class="text-green-600">📊 ${learnedRules.combinedLearning.totalSources} קבצי לוג</div>
+                <div class="text-green-600">🎯 ${learnedRules.combinedLearning.totalDecisions} החלטות סה"כ</div>
+                <div class="text-green-600">📈 ${learnedRules.combinedLearning.accuracy}% דיוק כללי</div>
+                <div class="text-blue-600">🏆 קטגוריה מובילה: ${learnedRules.combinedLearning.bestCategory} (${learnedRules.combinedLearning.bestAccuracy}%)</div>
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">⚖️ משקלים מותאמים (ממוצע משוקלל):</h3>
+            <div class="text-sm space-y-1">
+                <div>📝 מילים משותפות: <span class="font-bold text-green-600">${learnedRules.weights.sharedWords}%</span> ${learnedRules.weights.sharedWords > 50 ? '(דומיננטי!)' : ''}</div>
+                <div>💰 יחס מחירים: <span class="font-bold">${learnedRules.weights.priceRatio}%</span></div>
+                <div>🏷️ אותו מותג: <span class="font-bold ${learnedRules.weights.sameBrand > 15 ? 'text-green-600' : 'text-orange-600'}">${learnedRules.weights.sameBrand}%</span> ${learnedRules.weights.sameBrand <= 5 ? '(לא מועיל)' : ''}</div>
+                <div>📏 יחידת מידה זהה: <span class="font-bold">${learnedRules.weights.sameUnit}%</span></div>
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">📂 ניתוח לכל קטגוריה:</h3>
+            <div class="text-sm space-y-2">
+                ${Object.keys(learnedRules.categoryStats).map(category => {
+                    const stats = learnedRules.categoryStats[category];
+                    const weights = learnedRules.categoryWeights[category];
+                    return `
+                        <div class="border-l-2 border-blue-300 pl-3">
+                            <strong>${category}</strong> (${(stats.accuracy * 100).toFixed(1)}% דיוק)<br>
+                            <span class="text-xs">
+                                מותג: ${(stats.brandAccuracy * 100).toFixed(0)}% | 
+                                יחידה: ${(stats.unitAccuracy * 100).toFixed(0)}% | 
+                                סף איכות: ${weights.qualityThreshold}%
+                            </span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+        
+        <div class="rule-card p-4 rounded-lg">
+            <h3 class="font-semibold mb-2">🔧 הגדרות מתקדמות:</h3>
+            <div class="text-sm space-y-1">
+                <div>🎯 סף איכות דינמי: <span class="font-bold">${learnedRules.qualityThreshold}%</span></div>
+                <div>🔢 מקסימום תחליפים: <span class="font-bold">${learnedRules.maxAlternatives}</span></div>
+                <div>🧠 מצב: ${selectedMode === 'improve' ? 'שיפור קובץ קיים' : 'יצירה חדשה'}</div>
+                ${learnedRules.adaptiveRules.reduceBrandWeight.length > 0 ? 
+                    `<div class="text-orange-600">⚠️ משקל מותג מופחת ב: ${learnedRules.adaptiveRules.reduceBrandWeight.join(', ')}</div>` : ''}
+                ${learnedRules.adaptiveRules.boostSharedWords.length > 0 ? 
+                    `<div class="text-green-600">⬆️ משקל מילים מוגבר ב: ${learnedRules.adaptiveRules.boostSharedWords.join(', ')}</div>` : ''}
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('learningAnalysis').innerHTML = analysisHTML;
+}
+        
         function startProcessing() {
             document.getElementById('step3').classList.add('hidden');
             document.getElementById('step4').classList.remove('hidden');
