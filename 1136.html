@@ -567,24 +567,43 @@
                     }
                 };
 
-                // קבלת מוצרים לפי קטגוריה - תיקון עם הגנה!
-                const getProductsByCategory = (categoryName) => {
-                    try {
-                        const products = Object.values(productDatabase.products)
-                            .filter(product => {
-                                // תיקון: משתמש ב-smartCategory במקום category
-                                const productCategory = product.smartCategory || product.category;
-                                return productCategory === categoryName;
-                            })
-                            .sort((a, b) => calculateAveragePrice(a) - calculateAveragePrice(b));
-                        
-                        console.log(`מוצרים בקטגוריה ${categoryName}:`, products.length);
-                        return products;
-                    } catch (error) {
-                        console.error('שגיאה בקבלת מוצרים לפי קטגוריה:', error);
-                        return [];
-                    }
+// קבלת מוצרים לפי קטגוריה - מיון חכם לפי זמינות בחנויות!
+const getProductsByCategory = (categoryName) => {
+    try {
+        const products = Object.values(productDatabase.products)
+            .filter(product => {
+                const productCategory = product.smartCategory || product.category;
+                return productCategory === categoryName;
+            })
+            .map(product => {
+                // חישוב כמה חנויות המוצר זמין בהן
+                const availableStores = Object.values(product.prices).filter(p => p.available).length;
+                const totalStores = Object.keys(productDatabase.metadata.stores).length;
+                const storeAvailabilityRatio = availableStores / totalStores;
+                
+                return {
+                    ...product,
+                    availableStores,
+                    storeAvailabilityRatio,
+                    averagePrice: calculateAveragePrice(product)
                 };
+            })
+            .sort((a, b) => {
+                // מיון לפי זמינות בחנויות (יותר חנויות = עדיפות גבוהה)
+                if (b.availableStores !== a.availableStores) {
+                    return b.availableStores - a.availableStores;
+                }
+                // אם זמינות זהה, מיון לפי מחיר (זול יותר = עדיפות גבוהה)
+                return a.averagePrice - b.averagePrice;
+            });
+        
+        console.log(`מוצרים בקטגוריה ${categoryName}: ${products.length} (מסודרים לפי זמינות בחנויות)`);
+        return products;
+    } catch (error) {
+        console.error('שגיאה בקבלת מוצרים לפי קטגוריה:', error);
+        return [];
+    }
+};
 
                 // קבלת תחליפים למוצר - עדכון לקריאה מהמעבד החכם!
                 const getProductAlternatives = (baseProduct) => {
